@@ -1,0 +1,15 @@
+{
+  "name": "dues-management",
+  "version": "1.0.0",
+  "description": "Dues Management System - School of Sciences, UENR Sunyani",
+  "scripts": {
+    "install:all": "npm.cmd --prefix server install && npm.cmd --prefix client install",
+    "setup": "npm.cmd --prefix server run db:setup",
+    "dev:server": "npm.cmd --prefix server run dev",
+    "dev:client": "npm.cmd --prefix client run dev",
+    "dev": "concurrently \"npm.cmd --prefix server run dev\" \"npm.cmd --prefix client run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

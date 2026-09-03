@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pending Freshers - Dues Management</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-icon">
+          <i class="ph ph-graduation-cap" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <h2>School of Sciences</h2>
+          <p>Admin Panel</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><i class="ph ph-house"></i> Overview</a>
+        <a href="freshers.html" class="active"><i class="ph ph-user-plus"></i> Freshers</a>
+        <a href="students.html"><i class="ph ph-users"></i> Students</a>
+        <a href="payments.html"><i class="ph ph-currency-circle-dollar"></i> Dues &amp; Payments</a>
+        <a href="verify.html"><i class="ph ph-check-circle"></i> Verify Receipt</a>
+        <a href="reports.html"><i class="ph ph-chart-bar"></i> Reports</a>
+        <a href="settings.html"><i class="ph ph-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <a href="index.html"><i class="ph ph-arrow-left"></i> View Public Site</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="top-header">
+        <div class="header-left">
+          <div class="greeting">Good morning, Dr. Mensah</div>
+          <div class="date">Sunday, 30 August 2026</div>
+        </div>
+        <div class="header-right">
+          <div class="header-notif">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <div class="badge-dot"></div>
+          </div>
+          <div class="header-user">
+            <div class="avatar">DM</div>
+            <div class="user-info">
+              <div class="user-name">Admin</div>
+              <div class="user-email">admin@sciences.uenr.edu.gh</div>
+            </div>
+          </div>
+          <a href="index.html" class="header-logout" title="Sign Out">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          </a>
+        </div>
+      </header>
+
+      <div class="main-scroll">
+      <div class="page-header flex between align-center">
+        <div>
+          <h1>Pending Freshers</h1>
+          <p>Freshers already belong to the School. Search and add them to a department.</p>
+        </div>
+        <button class="btn btn-primary" onclick="document.getElementById('addForm').classList.toggle('hidden')">
+          + Register Fresher
+        </button>
+      </div>
+
+      <div class="alert alert-success">
+        Added <strong>Ama Boateng</strong> to Mathematics. Now record their department dues on the Payments page.
+      </div>
+
+      <!-- REGISTER FORM -->
+      <div class="card hidden" id="addForm">
+        <h3>Register a Fresher (School Level)</h3>
+        <form class="grid grid-3" onsubmit="event.preventDefault()">
+          <div class="field">
+            <label>Full Name *</label>
+            <input type="text" class="input" placeholder="e.g. Kofi Asante" required>
+          </div>
+          <div class="field">
+            <label>Student Number</label>
+            <input type="text" class="input" placeholder="e.g. SCS-1045">
+          </div>
+          <div class="field">
+            <label>Admission Year</label>
+            <input type="text" class="input" value="2026">
+          </div>
+          <div>
+            <button class="btn btn-success">Register Fresher</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- SEARCH + TABLE -->
+      <div class="card">
+        <div class="field" style="max-width: 400px;">
+          <input type="text" class="input search-input" placeholder="Search by name or student number...">
+        </div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Student No</th>
+                <th>Admission Year</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fw-600">Ama Boateng</td>
+                <td>SCS-1001</td>
+                <td>2026</td>
+                <td><span class="badge badge-gold">Pending</span></td>
+                <td>
+                  <button class="btn btn-primary btn-sm" onclick="document.getElementById('adoptPanel').classList.remove('hidden')">
+                    Add to Dept
+                  </button>
+                </td>
+              </tr>
+              <tr>
+                <td class="fw-600">Kwaku Frimpong</td>
+                <td>SCS-1002</td>
+                <td>2026</td>
+                <td><span class="badge badge-gold">Pending</span></td>
+                <td><button class="btn btn-primary btn-sm">Add to Dept</button></td>
+              </tr>
+              <tr>
+                <td class="fw-600">Abena Osei</td>
+                <td>SCS-1003</td>
+                <td>2026</td>
+                <td><span class="badge badge-gold">Pending</span></td>
+                <td><button class="btn btn-primary btn-sm">Add to Dept</button></td>
+              </tr>
+              <tr>
+                <td class="fw-600">Yaw Mensah</td>
+                <td>SCS-1004</td>
+                <td>2026</td>
+                <td><span class="badge badge-gold">Pending</span></td>
+                <td><button class="btn btn-primary btn-sm">Add to Dept</button></td>
+              </tr>
+              <tr>
+                <td class="fw-600">Efua Ansah</td>
+                <td>SCS-1005</td>
+                <td>2026</td>
+                <td><span class="badge badge-gold">Pending</span></td>
+                <td><button class="btn btn-primary btn-sm">Add to Dept</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ADOPT PANEL -->
+      <div class="card hidden" id="adoptPanel">
+        <h3>Add Ama Boateng to a Department</h3>
+        <p class="text-sm muted mb">This student is already registered with the School. Add them to your records so you can collect department dues and record department souvenirs.</p>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Department *</label>
+            <div class="select-wrap">
+              <select class="input">
+                <option value="">Select department...</option>
+                <option>Mathematics</option>
+                <option>Biology</option>
+                <option>Chemistry</option>
+                <option>Physics</option>
+                <option>Computer Science</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Class / Level</label>
+            <div class="select-wrap">
+              <select class="input">
+                <option value="">Select class...</option>
+                <option>Level 100</option>
+                <option>Level 200</option>
+                <option>Level 300</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-sm">
+          <button class="btn btn-success">Add to Department</button>
+          <button class="btn btn-outline" onclick="document.getElementById('adoptPanel').classList.add('hidden')">Cancel</button>
+        </div>
+      </div>
+
+      </div><!-- end main-scroll -->
+    </div><!-- end main -->
+  </div><!-- end app-shell -->
+  <script src="nav.js"></script>
+</body>
+</html>

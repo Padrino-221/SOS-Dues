@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Dues Management</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-icon">
+          <i class="ph ph-graduation-cap" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <h2>School of Sciences</h2>
+          <p>Admin Panel</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="active"><i class="ph ph-house"></i> Overview</a>
+        <a href="freshers.html"><i class="ph ph-user-plus"></i> Freshers</a>
+        <a href="students.html"><i class="ph ph-users"></i> Students</a>
+        <a href="payments.html"><i class="ph ph-currency-circle-dollar"></i> Dues &amp; Payments</a>
+        <a href="verify.html"><i class="ph ph-check-circle"></i> Verify Receipt</a>
+        <a href="reports.html"><i class="ph ph-chart-bar"></i> Reports</a>
+        <a href="settings.html"><i class="ph ph-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <a href="index.html"><i class="ph ph-arrow-left"></i> View Public Site</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <!-- HEADER -->
+      <header class="top-header">
+        <div class="header-left">
+          <div class="greeting">Good morning, Dr. Mensah</div>
+          <div class="date">Sunday, 30 August 2026</div>
+        </div>
+        <div class="header-right">
+          <div class="header-notif">
+            <i class="ph ph-bell" style="font-size:18px"></i>
+            <div class="badge-dot"></div>
+          </div>
+          <div class="header-user">
+            <div class="avatar">DM</div>
+            <div class="user-info">
+              <div class="user-name">Admin</div>
+              <div class="user-email">admin@sciences.uenr.edu.gh</div>
+            </div>
+          </div>
+          <a href="index.html" class="header-logout" title="Sign Out">
+            <i class="ph ph-sign-out" style="font-size:18px"></i>
+          </a>
+        </div>
+      </header>
+
+      <!-- CONTENT -->
+      <div class="main-scroll">
+        <h1>Overview</h1>
+        <p class="subtitle mb-md">Welcome back to Dues Management</p>
+
+        <!-- STAT CARDS -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">Total Department Dues</div>
+              <div class="stat-value">GHS 4,250</div>
+              <div class="stat-trend"><i class="ph ph-trend-up" style="font-size:12px;margin-right:2px"></i> 12% than last month</div>
+            </div>
+            <div class="stat-icon-badge navy"><i class="ph ph-currency-circle-dollar"></i></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">Total School Dues</div>
+              <div class="stat-value gold">GHS 2,100</div>
+              <div class="stat-trend"><i class="ph ph-trend-up" style="font-size:12px;margin-right:2px"></i> 8% than last month</div>
+            </div>
+            <div class="stat-icon-badge gold"><i class="ph ph-currency-circle-dollar"></i></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">Students Paid</div>
+              <div class="stat-value">82</div>
+              <div class="stat-trend"><i class="ph ph-trend-up" style="font-size:12px;margin-right:2px"></i> 68% of total students</div>
+            </div>
+            <div class="stat-icon-badge green"><i class="ph ph-users"></i></div>
+          </div>
+        </div>
+
+        <!-- BOTTOM 2-COLUMN -->
+        <div class="grid grid-2">
+          <!-- QUICK ACTIONS -->
+          <div class="card">
+            <h2>Quick Actions</h2>
+            <a href="freshers.html" class="action-item">
+              <div class="action-icon navy"><i class="ph ph-user-plus"></i></div>
+              <span>Pending Freshers</span>
+            </a>
+            <a href="students.html" class="action-item">
+              <div class="action-icon green"><i class="ph ph-users"></i></div>
+              <span>Add Students</span>
+            </a>
+            <a href="payments.html" class="action-item">
+              <div class="action-icon gold"><i class="ph ph-currency-circle-dollar"></i></div>
+              <span>Dues &amp; Payments</span>
+            </a>
+            <a href="verify.html" class="action-item">
+              <div class="action-icon navy"><i class="ph ph-check-circle"></i></div>
+              <span>Verify Receipt</span>
+            </a>
+          </div>
+
+          <!-- RECENT ACTIVITY -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Recent Activity</h2>
+              <span class="activity-badge">3 new today</span>
+            </div>
+            <div class="activity-item">
+              <div class="activity-dot gold"></div>
+              <div class="activity-text">School dues recorded for <strong>Ama Boateng</strong> &mdash; GHS 30.00</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-dot navy"></div>
+              <div class="activity-text">Department dues recorded for <strong>Ama Boateng</strong> &mdash; GHS 50.00</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-dot green"></div>
+              <div class="activity-text"><strong>Kwaku Frimpong</strong> added to Mathematics department</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-dot navy"></div>
+              <div class="activity-text">Rep collection: <strong>Kofi Asare</strong> &mdash; GHS 60.00 (Computer Science)</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-dot gold"></div>
+              <div class="activity-text">Fresher registered: <strong>Abena Osei</strong> (SCS-1003)</div>
+            </div>
+            <div class="activity-item">
+              <div class="activity-dot red"></div>
+              <div class="activity-text">Department admin <strong>Dr. Nyarko</strong> created for Biology</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DEPARTMENT COLLECTION BARS -->
+        <div class="card" style="margin-top:16px">
+          <h2>Department Collection Rate</h2>
+          <div class="dept-bar-row">
+            <span class="dept-name">Mathematics</span>
+            <div class="dept-bar-track"><div class="dept-bar-fill navy" style="width:86%"></div></div>
+            <span class="dept-pct">86%</span>
+          </div>
+          <div class="dept-bar-row">
+            <span class="dept-name">Biology</span>
+            <div class="dept-bar-track"><div class="dept-bar-fill gold" style="width:83%"></div></div>
+            <span class="dept-pct">83%</span>
+          </div>
+          <div class="dept-bar-row">
+            <span class="dept-name">Computer Science</span>
+            <div class="dept-bar-track"><div class="dept-bar-fill navy" style="width:36%"></div></div>
+            <span class="dept-pct">36%</span>
+          </div>
+          <div class="dept-bar-row">
+            <span class="dept-name">Chemistry</span>
+            <div class="dept-bar-track"><div class="dept-bar-fill gold" style="width:17%"></div></div>
+            <span class="dept-pct">17%</span>
+          </div>
+          <div class="dept-bar-row">
+            <span class="dept-name">Physics</span>
+            <div class="dept-bar-track"><div class="dept-bar-fill navy" style="width:12%"></div></div>
+            <span class="dept-pct">12%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Class Dues Collection - School of Sciences, UENR</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .rep-card{max-width:560px;margin:0 auto}
+    .rep-header{text-align:center;margin-bottom:28px}
+    .rep-header h1{font-size:24px}
+    .rep-class-info{font-size:14px;color:var(--gray-500);margin-top:4px}
+    .rep-dues-info{display:inline-block;background:var(--gold-bg);color:var(--gold);font-weight:600;padding:6px 16px;border-radius:20px;font-size:13px;margin-top:10px;border:1px solid #E5DEB0}
+    .rep-footer{text-align:center;margin-top:16px;font-size:12px;color:var(--gray-400)}
+  </style>
+</head>
+<body>
+  <div class="landing-wrap">
+    <div class="landing-card rep-card">
+      <div class="rep-header">
+        <img src="school-logo.jpg" alt="School of Sciences" class="landing-logo">
+        <h1>Class Dues Collection</h1>
+        <div class="rep-class-info">Mathematics &mdash; Level 100</div>
+        <div class="rep-dues-info">Department Dues: GHS 50.00</div>
+      </div>
+      <form onsubmit="event.preventDefault();document.getElementById('receiptResult').style.display='block'">
+        <div class="field">
+          <label>Student Full Name *</label>
+          <input type="text" class="input" placeholder="e.g. Kwame Asante" required>
+        </div>
+        <div class="field">
+          <label>Student Number *</label>
+          <input type="text" class="input" placeholder="e.g. SCS-1001" required>
+        </div>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Amount Paid (GHS) *</label>
+            <input type="number" class="input" step="0.01" min="0" value="50" required>
+          </div>
+          <div class="field">
+            <label>Payment Method</label>
+            <select class="input">
+              <option value="cash" selected>Cash</option>
+              <option value="momo">Mobile Money</option>
+              <option value="bank">Bank</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg w-full">Record Payment &amp; Issue Receipt</button>
+      </form>
+      <div id="receiptResult" style="display:none">
+        <div class="receipt-box mt-md">
+          <div class="text-xs muted">PAYMENT RECORDED SUCCESSFULLY</div>
+          <div class="receipt-number">UENR-DUES-MTF0L0O8-B9B5F288</div>
+          <div class="receipt-amount">GHS 50.00 &mdash; Cash</div>
+        </div>
+      </div>
+      <div class="rep-footer">This page records continuing-student dues for Level 100.<br>Payments are verified by admins using the receipt number above.</div>
+    </div>
+  </div>
+  <script src="nav.js"></script>
+</body>
+</html>

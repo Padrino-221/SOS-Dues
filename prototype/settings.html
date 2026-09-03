@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings - Dues Management</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .code-cell {
+      font-family: 'Courier New', monospace;
+      background: rgba(26, 40, 104, 0.08);
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--navy);
+      border: 1px solid rgba(26, 40, 104, 0.1);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-icon">
+          <i class="ph ph-graduation-cap" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <h2>School of Sciences</h2>
+          <p>Admin Panel</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><i class="ph ph-house"></i> Overview</a>
+        <a href="freshers.html"><i class="ph ph-user-plus"></i> Freshers</a>
+        <a href="students.html"><i class="ph ph-users"></i> Students</a>
+        <a href="payments.html"><i class="ph ph-currency-circle-dollar"></i> Dues &amp; Payments</a>
+        <a href="verify.html"><i class="ph ph-check-circle"></i> Verify Receipt</a>
+        <a href="reports.html"><i class="ph ph-chart-bar"></i> Reports</a>
+        <a href="settings.html" class="active"><i class="ph ph-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <a href="index.html"><i class="ph ph-arrow-left"></i> View Public Site</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="top-header">
+        <div class="header-left">
+          <div class="greeting">Good morning, Dr. Mensah</div>
+          <div class="date">Sunday, 30 August 2026</div>
+        </div>
+        <div class="header-right">
+          <div class="header-notif">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <div class="badge-dot"></div>
+          </div>
+          <div class="header-user">
+            <div class="avatar">DM</div>
+            <div class="user-info">
+              <div class="user-name">Admin</div>
+              <div class="user-email">admin@sciences.uenr.edu.gh</div>
+            </div>
+          </div>
+          <a href="index.html" class="header-logout" title="Sign Out">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          </a>
+        </div>
+      </header>
+
+      <div class="main-scroll">
+      <div class="page-header">
+        <h1>Settings</h1>
+        <p>Configure departments, dues amounts, classes, souvenirs, and department admins.</p>
+      </div>
+
+      <div class="alert alert-success">Department added successfully.</div>
+
+      <!-- TABS -->
+      <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('departments')">Departments</button>
+        <button class="tab-btn" onclick="showTab('classes')">Classes</button>
+        <button class="tab-btn" onclick="showTab('souvenirs')">Souvenirs</button>
+        <button class="tab-btn" onclick="showTab('admins')">Dept Admins</button>
+      </div>
+
+      <!-- DEPARTMENTS TAB -->
+      <div class="tab-content active" id="tab-departments">
+        <div class="card">
+          <h3 class="mb-sm">Add Department</h3>
+          <form class="grid grid-3" onsubmit="event.preventDefault()">
+            <div class="field">
+              <label>Department Name *</label>
+              <input type="text" class="input" placeholder="e.g. Statistics">
+            </div>
+            <div class="field">
+              <label>Dues Amount (GHS)</label>
+              <input type="number" class="input" value="50" step="0.01" min="0">
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+              <button class="btn btn-primary">Add Department</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3 class="mb-sm">Departments &amp; Dues</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th>Classes</th>
+                  <th>Students</th>
+                  <th>Dues Amount (GHS)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="fw-600">Mathematics</td>
+                  <td>3</td>
+                  <td>35</td>
+                  <td>
+                    <input type="number" class="input" value="50" style="width: 120px; padding: 6px 10px;">
+                  </td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Biology</td>
+                  <td>3</td>
+                  <td>42</td>
+                  <td>
+                    <input type="number" class="input" value="50" style="width: 120px; padding: 6px 10px;">
+                  </td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Computer Science</td>
+                  <td>3</td>
+                  <td>28</td>
+                  <td>
+                    <input type="number" class="input" value="60" style="width: 120px; padding: 6px 10px;">
+                  </td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Chemistry</td>
+                  <td>3</td>
+                  <td>30</td>
+                  <td>
+                    <input type="number" class="input" value="50" style="width: 120px; padding: 6px 10px;">
+                  </td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Physics</td>
+                  <td>3</td>
+                  <td>25</td>
+                  <td>
+                    <input type="number" class="input" value="50" style="width: 120px; padding: 6px 10px;">
+                  </td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CLASSES TAB -->
+      <div class="tab-content" id="tab-classes">
+        <div class="card">
+          <h3 class="mb-sm">Add Class / Level</h3>
+          <form class="grid grid-3" onsubmit="event.preventDefault()">
+            <div class="field">
+              <label>Department *</label>
+              <select class="input" required>
+                <option value="">Select...</option>
+                <option>Mathematics</option>
+                <option>Biology</option>
+                <option>Computer Science</option>
+                <option>Chemistry</option>
+                <option>Physics</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Class Name *</label>
+              <input type="text" class="input" placeholder="e.g. Level 400" required>
+            </div>
+            <div class="field">
+              <label>Level</label>
+              <input type="text" class="input" placeholder="e.g. 400">
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+              <button class="btn btn-primary">Add Class</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3 class="mb-sm">Classes</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Class</th>
+                  <th>Department</th>
+                  <th>Level</th>
+                  <th>Access Code (for Reps)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Level 100</td>
+                  <td>Mathematics</td>
+                  <td>100</td>
+                  <td><span class="code-cell">MATHEMATICS-100-100</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 200</td>
+                  <td>Mathematics</td>
+                  <td>200</td>
+                  <td><span class="code-cell">MATHEMATICS-200-200</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 300</td>
+                  <td>Mathematics</td>
+                  <td>300</td>
+                  <td><span class="code-cell">MATHEMATICS-300-300</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 100</td>
+                  <td>Biology</td>
+                  <td>100</td>
+                  <td><span class="code-cell">BIOLOGY-100-100</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 200</td>
+                  <td>Biology</td>
+                  <td>200</td>
+                  <td><span class="code-cell">BIOLOGY-200-200</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 300</td>
+                  <td>Biology</td>
+                  <td>300</td>
+                  <td><span class="code-cell">BIOLOGY-300-300</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 100</td>
+                  <td>Computer Science</td>
+                  <td>100</td>
+                  <td><span class="code-cell">COMPUTERSCIENCE-100-100</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 200</td>
+                  <td>Computer Science</td>
+                  <td>200</td>
+                  <td><span class="code-cell">COMPUTERSCIENCE-200-200</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td>Level 300</td>
+                  <td>Computer Science</td>
+                  <td>300</td>
+                  <td><span class="code-cell">COMPUTERSCIENCE-300-300</span></td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SOUVENIRS TAB -->
+      <div class="tab-content" id="tab-souvenirs">
+        <div class="card">
+          <h3 class="mb-sm">Add Souvenir</h3>
+          <form class="grid grid-3" onsubmit="event.preventDefault()">
+            <div class="field">
+              <label>Name *</label>
+              <input type="text" class="input" placeholder="e.g. School Backpack" required>
+            </div>
+            <div class="field">
+              <label>Category</label>
+              <select class="input">
+                <option value="school">School</option>
+                <option value="department">Department</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Cost (GHS)</label>
+              <input type="number" class="input" value="0" step="0.01" min="0">
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+              <button class="btn btn-primary">Add Souvenir</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3 class="mb-sm">Souvenirs</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th>Cost (GHS)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="fw-600">School T-Shirt</td>
+                  <td><span class="badge badge-navy">School</span></td>
+                  <td>10.00</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">School Cap</td>
+                  <td><span class="badge badge-navy">School</span></td>
+                  <td>8.00</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">School Mug</td>
+                  <td><span class="badge badge-navy">School</span></td>
+                  <td>6.00</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Department Pen</td>
+                  <td><span class="badge badge-gold">Department</span></td>
+                  <td>2.00</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Department Sticker</td>
+                  <td><span class="badge badge-gold">Department</span></td>
+                  <td>1.00</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Department Notebook</td>
+                  <td><span class="badge badge-gold">Department</span></td>
+                  <td>5.00</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADMINS TAB -->
+      <div class="tab-content" id="tab-admins">
+        <div class="card">
+          <h3 class="mb-sm">Create Department Admin</h3>
+          <form class="grid grid-2" onsubmit="event.preventDefault()">
+            <div class="field">
+              <label>Full Name *</label>
+              <input type="text" class="input" placeholder="e.g. Dr. Kofi Mensah" required>
+            </div>
+            <div class="field">
+              <label>Email *</label>
+              <input type="email" class="input" placeholder="admin@sciences.uenr.edu.gh" required>
+            </div>
+            <div class="field">
+              <label>Department *</label>
+              <select class="input" required>
+                <option value="">Select...</option>
+                <option>Mathematics</option>
+                <option>Biology</option>
+                <option>Computer Science</option>
+                <option>Chemistry</option>
+                <option>Physics</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Temporary Password *</label>
+              <input type="text" class="input" placeholder="Enter a password" required>
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+              <button class="btn btn-primary">Create Admin</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3 class="mb-sm">Department Admins</h3>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Department</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="fw-600">Dr. Kofi Mensah</td>
+                  <td>math@sciences.uenr.edu.gh</td>
+                  <td>Mathematics</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Dr. Akua Nyarko</td>
+                  <td>bio@sciences.uenr.edu.gh</td>
+                  <td>Biology</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+                <tr>
+                  <td class="fw-600">Prof. Yaw Boakye</td>
+                  <td>cs@sciences.uenr.edu.gh</td>
+                  <td>Computer Science</td>
+                  <td><button class="btn btn-danger btn-xs">Delete</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      </div><!-- end main-scroll -->
+    </div><!-- end main -->
+  </div><!-- end app-shell -->
+  <script src="nav.js"></script>
+  <script>
+    function showTab(name) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>

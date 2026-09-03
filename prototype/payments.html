@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dues &amp; Payments - Dues Management</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .payment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .receipt-result {
+      margin-top: 16px;
+      padding: 14px;
+      background: rgba(220, 252, 231, 0.5);
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--green);
+    }
+    .receipt-result strong { color: var(--navy); font-size: 15px; }
+    .dept-disabled {
+      background: rgba(0,0,0,0.02) !important;
+      color: var(--gray-500) !important;
+      cursor: not-allowed !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-icon">
+          <i class="ph ph-graduation-cap" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <h2>School of Sciences</h2>
+          <p>Admin Panel</p>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html"><i class="ph ph-house"></i> Overview</a>
+        <a href="freshers.html"><i class="ph ph-user-plus"></i> Freshers</a>
+        <a href="students.html"><i class="ph ph-users"></i> Students</a>
+        <a href="payments.html" class="active"><i class="ph ph-currency-circle-dollar"></i> Dues &amp; Payments</a>
+        <a href="verify.html"><i class="ph ph-check-circle"></i> Verify Receipt</a>
+        <a href="reports.html"><i class="ph ph-chart-bar"></i> Reports</a>
+        <a href="settings.html"><i class="ph ph-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <a href="index.html"><i class="ph ph-arrow-left"></i> View Public Site</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="top-header">
+        <div class="header-left">
+          <div class="greeting">Good morning, Dr. Mensah</div>
+          <div class="date">Sunday, 30 August 2026</div>
+        </div>
+        <div class="header-right">
+          <div class="header-notif">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <div class="badge-dot"></div>
+          </div>
+          <div class="header-user">
+            <div class="avatar">DM</div>
+            <div class="user-info">
+              <div class="user-name">Admin</div>
+              <div class="user-email">admin@sciences.uenr.edu.gh</div>
+            </div>
+          </div>
+          <a href="index.html" class="header-logout" title="Sign Out">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          </a>
+        </div>
+      </header>
+
+      <div class="main-scroll">
+      <div class="page-header">
+        <h1>Dues &amp; Payments</h1>
+        <p>Record fresher dues and souvenirs at both School and Department level.</p>
+      </div>
+
+      <div class="alert alert-success">
+        Payment recorded successfully. Receipt number: <strong>UENR-SCH-MTF0KC51-4915DDD4</strong>
+      </div>
+
+      <!-- STUDENT SELECTOR -->
+      <div class="card">
+        <h3 class="mb-sm">Select Student</h3>
+        <p class="text-sm muted mb">Search by name or student number to find the student.</p>
+        <div class="grid grid-2">
+          <div class="field" style="margin-bottom: 0;">
+            <input type="text" class="input search-input" placeholder="Search students...">
+          </div>
+          <div class="field" style="margin-bottom: 0;">
+            <div class="select-wrap">
+              <select class="input">
+                <option selected>Ama Boateng (SCS-1001) - Mathematics - Level 100</option>
+                <option>Kwaku Frimpong (SCS-1002) - Mathematics - Level 200</option>
+                <option>Kofi Asare (SCS-2001) - Computer Science - Level 100</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAYMENT FORMS -->
+      <div class="payment-grid">
+        <!-- SCHOOL DUES -->
+        <div class="card">
+          <h3 class="mb-sm">School Dues &amp; Souvenirs</h3>
+          <p class="text-sm muted mb">For freshers: School takes dues and hands out School souvenirs on day one.</p>
+
+          <div class="field">
+            <label>Amount (GHS) *</label>
+            <input type="number" class="input" value="30" step="0.01" min="0">
+          </div>
+          <div class="field">
+            <label>Payment Method</label>
+            <div class="select-wrap">
+              <select class="input">
+                <option value="cash" selected>Cash</option>
+                <option value="momo">Mobile Money</option>
+                <option value="bank">Bank</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input type="date" class="input" value="2026-08-29">
+          </div>
+
+          <div class="field">
+            <label>Souvenirs handed over (School)</label>
+            <div>
+              <label class="custom-check"><input type="checkbox" checked> School T-Shirt (GHS 10)</label>
+              <label class="custom-check"><input type="checkbox" checked> School Cap (GHS 8)</label>
+              <label class="custom-check"><input type="checkbox"> School Mug (GHS 6)</label>
+            </div>
+          </div>
+
+          <button class="btn btn-success">Record School Dues</button>
+        </div>
+
+        <!-- DEPARTMENT DUES -->
+        <div class="card">
+          <h3 class="mb-sm">Department Dues &amp; Souvenirs</h3>
+          <p class="text-sm muted mb">For students added to a department: record department dues and souvenirs.</p>
+
+          <div class="field">
+            <label>Student's Department</label>
+            <input type="text" class="input" value="Mathematics" disabled class="dept-disabled">
+          </div>
+          <div class="field">
+            <label>Amount (GHS) *</label>
+            <input type="number" class="input" value="50" step="0.01" min="0">
+          </div>
+          <div class="field">
+            <label>Payment Method</label>
+            <div class="select-wrap">
+              <select class="input">
+                <option value="cash">Cash</option>
+                <option value="momo" selected>Mobile Money</option>
+                <option value="bank">Bank</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input type="date" class="input" value="2026-08-29">
+          </div>
+
+          <button class="btn btn-primary">Record Department Dues</button>
+
+          <hr class="section-sep">
+
+          <h3 class="mb-sm">Record Department Souvenirs</h3>
+          <div class="field">
+            <label class="custom-check"><input type="checkbox" checked> Department Pen (GHS 2)</label>
+            <label class="custom-check"><input type="checkbox"> Department Sticker (GHS 1)</label>
+            <label class="custom-check"><input type="checkbox"> Department Notebook (GHS 5)</label>
+          </div>
+          <button class="btn btn-outline">Save Department Souvenirs</button>
+        </div>
+      </div>
+
+      <!-- RECENT PAYMENTS -->
+      <div class="card">
+        <h2>Recent Payments</h2>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Receipt Number</th>
+                <th>Student</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Method</th>
+                <th>Date</th>
+                <th>Recorded By</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code class="text-navy fw-600">UENR-SCH-MTF0KC51-4915DDD4</code></td>
+                <td>Ama Boateng</td>
+                <td><span class="badge badge-navy">School</span></td>
+                <td>GHS 30.00</td>
+                <td>Cash</td>
+                <td>29 Aug 2026</td>
+                <td>Admin</td>
+              </tr>
+              <tr>
+                <td><code class="text-navy fw-600">UENR-DEPT-MTF0KC6A-EECF560C</code></td>
+                <td>Ama Boateng</td>
+                <td><span class="badge badge-green">Department</span></td>
+                <td>GHS 50.00</td>
+                <td>Mobile Money</td>
+                <td>29 Aug 2026</td>
+                <td>Admin</td>
+              </tr>
+              <tr>
+                <td><code class="text-navy fw-600">UENR-DUES-MTF0L0O8-B9B5F288</code></td>
+                <td>Kofi Asare</td>
+                <td><span class="badge badge-green">Department</span></td>
+                <td>GHS 60.00</td>
+                <td>Cash</td>
+                <td>29 Aug 2026</td>
+                <td>Rep</td>
+              </tr>
+              <tr>
+                <td><code class="text-navy fw-600">UENR-SCH-ABC12345-XYZ67890</code></td>
+                <td>Yaw Boakye</td>
+                <td><span class="badge badge-navy">School</span></td>
+                <td>GHS 30.00</td>
+                <td>Cash</td>
+                <td>28 Aug 2026</td>
+                <td>Admin</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      </div><!-- end main-scroll -->
+    </div><!-- end main -->
+  </div><!-- end app-shell -->
+  <script src="nav.js"></script>
+</body>
+</html>

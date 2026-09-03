@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dues Management - School of Sciences, UENR</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="landing-wrap">
+    <div class="landing-card">
+      <img src="school-logo.jpg" alt="School of Sciences" class="landing-logo">
+      <h1>Dues Management System</h1>
+      <p class="subtitle mb-lg">School of Sciences, University of Energy and Natural Resources, Sunyani</p>
+
+      <div class="card" style="text-align:left;background:var(--cream-bg);margin-bottom:0">
+        <h3 class="mb-sm">Class Representative &mdash; Collect Dues</h3>
+        <p class="text-sm muted mb">Enter your class code to open your class collection form.</p>
+        <div class="field">
+          <label>Class Code</label>
+          <input type="text" class="input" placeholder="e.g. COMPUTERSCIENCE-100-100" id="classCodeInput">
+        </div>
+        <button class="btn btn-primary w-full" onclick="navigateTo('rep.html?code='+document.getElementById('classCodeInput').value)">Open Class Page</button>
+      </div>
+
+      <hr class="section-sep">
+
+      <a href="login.html" class="btn btn-outline w-full">Admin Sign In</a>
+
+      <p class="text-xs muted text-center mt-md">Leading Science, Shaping the Future</p>
+    </div>
+  </div>
+  <script src="nav.js"></script>
+</body>
+</html>

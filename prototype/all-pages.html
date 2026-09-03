@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prototype Index - Dues Management System</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body{background:var(--navy-darker);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+    .proto-index{background:var(--white);border-radius:var(--radius-lg);padding:40px;max-width:740px;width:100%;border:1px solid rgba(255,255,255,0.08)}
+    .proto-index h1{text-align:center;margin-bottom:4px}
+    .proto-index .subtitle{text-align:center;margin-bottom:32px}
+    .proto-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    .proto-link{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--cream-bg);border:1px solid var(--border);border-radius:var(--radius-sm);text-decoration:none;color:var(--gray-800);transition:all 0.15s}
+    .proto-link:hover{background:var(--navy-light);border-color:var(--navy);text-decoration:none}
+    .proto-link .num{width:32px;height:32px;background:var(--navy);color:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+    .proto-link .info h3{font-size:13px;color:var(--navy);margin:0}
+    .proto-link .info p{font-size:11px;color:var(--gray-500);margin:2px 0 0}
+    .proto-section{margin-bottom:16px}
+    .proto-section h2{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--gray-400);margin-bottom:10px;font-weight:600}
+  </style>
+</head>
+<body>
+  <div class="proto-index">
+    <img src="school-logo.jpg" alt="Logo" style="width:60px;height:60px;border-radius:50%;margin:0 auto 16px;display:block;object-fit:cover;border:3px solid var(--cream)">
+    <h1>UI Prototypes</h1>
+    <p class="subtitle">Dues Management System &mdash; School of Sciences, UENR Sunyani</p>
+    <div class="proto-section">
+      <h2>Public Pages</h2>
+      <div class="proto-grid">
+        <a href="index.html" class="proto-link"><div class="num">1</div><div class="info"><h3>Landing Page</h3><p>Home with class-rep code entry</p></div></a>
+        <a href="login.html" class="proto-link"><div class="num">2</div><div class="info"><h3>Admin Login</h3><p>Sign in for school &amp; dept admins</p></div></a>
+        <a href="rep.html" class="proto-link"><div class="num">3</div><div class="info"><h3>Class Rep Collection</h3><p>Public form for continuing-student dues</p></div></a>
+      </div>
+    </div>
+    <div class="proto-section">
+      <h2>Admin Pages</h2>
+      <div class="proto-grid">
+        <a href="dashboard.html" class="proto-link"><div class="num">4</div><div class="info"><h3>Dashboard</h3><p>Stats, quick actions, activity feed</p></div></a>
+        <a href="freshers.html" class="proto-link"><div class="num">5</div><div class="info"><h3>Pending Freshers</h3><p>Search &amp; adopt freshers into departments</p></div></a>
+        <a href="students.html" class="proto-link"><div class="num">6</div><div class="info"><h3>Students</h3><p>Add &amp; search continuing students</p></div></a>
+        <a href="payments.html" class="proto-link"><div class="num">7</div><div class="info"><h3>Dues &amp; Payments</h3><p>Record school/dept dues &amp; souvenirs</p></div></a>
+        <a href="verify.html" class="proto-link"><div class="num">8</div><div class="info"><h3>Verify Receipt</h3><p>Look up a receipt number</p></div></a>
+        <a href="reports.html" class="proto-link"><div class="num">9</div><div class="info"><h3>Reports</h3><p>Detailed breakdowns &amp; CSV export</p></div></a>
+        <a href="settings.html" class="proto-link"><div class="num">10</div><div class="info"><h3>Settings</h3><p>Depts, classes, souvenirs, admins</p></div></a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
