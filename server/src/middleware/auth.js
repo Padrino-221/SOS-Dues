@@ -40,6 +40,24 @@ function requireSchoolAdmin(req, res, next) {
   next();
 }
 
+function requireSchoolStaff(req, res, next) {
+  if (!req.user || req.user.role !== 'school_staff') {
+    return next(new AppError('School staff access required', 403));
+  }
+  next();
+}
+
+function requireAnySchool(req, res, next) {
+  if (!req.user || !['school_admin', 'school_staff'].includes(req.user.role)) {
+    return next(new AppError('School access required', 403));
+  }
+  next();
+}
+
+function isAnySchool(user) {
+  return user && ['school_admin', 'school_staff'].includes(user.role);
+}
+
 function requireDeptAdmin(req, res, next) {
   if (!req.user || req.user.role !== 'dept_admin') {
     return next(new AppError('Department admin access required', 403));
@@ -47,11 +65,44 @@ function requireDeptAdmin(req, res, next) {
   next();
 }
 
+function requireDeptStaff(req, res, next) {
+  if (!req.user || req.user.role !== 'dept_staff') {
+    return next(new AppError('Department staff access required', 403));
+  }
+  next();
+}
+
+function requireAnyDept(req, res, next) {
+  if (!req.user || !['dept_admin', 'dept_staff'].includes(req.user.role)) {
+    return next(new AppError('Department access required', 403));
+  }
+  next();
+}
+
+function isAnyDept(user) {
+  return user && ['dept_admin', 'dept_staff'].includes(user.role);
+}
+
 function requireAnyAdmin(req, res, next) {
-  if (!req.user || !['school_admin', 'dept_admin'].includes(req.user.role)) {
+  if (
+    !req.user ||
+    !['school_admin', 'school_staff', 'dept_admin', 'dept_staff'].includes(req.user.role)
+  ) {
     return next(new AppError('Admin access required', 403));
   }
   next();
 }
 
-module.exports = { signToken, requireAuth, requireSchoolAdmin, requireDeptAdmin, requireAnyAdmin };
+module.exports = {
+  signToken,
+  requireAuth,
+  requireSchoolAdmin,
+  requireSchoolStaff,
+  requireAnySchool,
+  isAnySchool,
+  requireDeptAdmin,
+  requireDeptStaff,
+  requireAnyDept,
+  isAnyDept,
+  requireAnyAdmin,
+};

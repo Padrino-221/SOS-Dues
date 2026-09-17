@@ -1,221 +1,185 @@
-# Dues Management System
+# Dues Management System — v2
 ## School of Sciences — University of Energy and Natural Resources, Sunyani
 
-### Project Plan & Proposal
+> **v2 rebuild.** This document supersedes the v1 plan. The app is being rebuilt from
+> scratch because the v1 role model did not match the School's real workflow.
+> v1 remains in git history (`4e06ec7`) for reference.
 
 ---
 
-## 1. Executive Summary
+## 1. Who does what (the role model)
 
-The School of Sciences currently tracks the payment of student dues using a **paper-based system**. This approach has several serious limitations:
+| Task | School Admin | Dept Admin | Class Rep (no account) |
+|------|:---:|:---:|:---:|
+| **Register freshers** and assign them to a department | ✅ | ❌ | ❌ |
+| Record **School dues + School souvenirs** (at fresher registration) | ✅ | ❌ | ❌ |
+| **Admit** freshers assigned to their department | ❌ | ✅ | ❌ |
+| Record **Department dues + Department souvenirs** (at fresher admission) | ❌ | ✅ | ❌ |
+| Add **continuing students** (single or bulk CSV import) | ❌ | ✅ | ❌ |
+| Create the department's **levels / classes** | ❌ | ✅ | ❌ |
+| **Configure the department's dues amount** | ❌ (view only) | ✅ | ❌ |
+| **Configure the department's souvenir list** | ❌ (view only) | ✅ | ❌ |
+| Manage the **School souvenir catalogue** | ✅ | ❌ | ❌ |
+| Record **continuing-student yearly dues** (School + Dept portions) | ❌ | ✅ | ✅ (public page) |
+| Supervise — verify receipts / reports / audit / school settings | ✅ | dept-scoped | ❌ |
 
-- There is **no reliable, real-time record** of how much money each department collects from its dues.
-- Freshers and continuing students are tracked inconsistently.
-- **Souvenir distribution** to freshers on their first day is not systematically recorded.
-- **Verification** of whether a student has paid is difficult and slow.
-- Data is prone to loss, damage, and errors.
+> **Correction (from the School's real workflow):** department-level configuration —
+> the department's **dues amount** and its own **souvenir list** — is done by each
+> Department Admin. The School Admin only registers freshers and assigns them to a
+> department; everything else at School level is supervision (verify, reports,
+> audit, school-wide dues amount, school souvenir catalogue, creating
+> departments/admins).
 
-This project proposes a **centralised web-based Dues Management System** that digitises the entire dues lifecycle — from collection, through souvenir distribution, to verification and reporting. The system will give the School leadership **accurate, up-to-date insight** into how much each department generates from its dues, while making day-to-day collection faster and more transparent for staff and class representatives.
+**Key rules (hard rules, enforced by the API, not just the UI):**
 
----
-
-## 2. Objectives
-
-The system is being built to achieve the following goals:
-
-| # | Objective |
-|---|-----------|
-| 1 | Digitise the collection and recording of **dues payments** for both freshers and continuing students. |
-| 2 | Provide the School with **accurate reporting on how much each department collects** from its dues. |
-| 3 | Systematically record **which souvenirs were handed out to freshers** on their first day, at both the School and department levels. |
-| 4 | Provide a simple, secure way to **verify a student's payment via a receipt number**. |
-| 5 | Give class representatives a **simple, code-based page** to submit continuing-students' dues without needing their own accounts. |
-| 6 | Replace fragile paper records with a **secure, centralised, searchable database**. |
-
----
-
-## 3. Current Problem
-
-- **Paper-based tracking:** All dues records are kept on paper, with no central, searchable record.
-- **No departmental revenue visibility:** The School has no clear idea of how much each department earns from its dues.
-- **Poor souvenir accountability:** There is no reliable record of which souvenirs were given to which fresher, creating potential for loss or misuse of items.
-- **No verification mechanism:** Staff cannot quickly confirm whether a student has paid their dues.
-- **Manual, error-prone workflow:** Data entry by hand is slow, inconsistent, and vulnerable to mistakes and loss of records.
-
----
-
-## 4. Scope of the System
-
-### 4.1 In Scope (MVP — Minimum Viable Product)
-
-- User authentication for **School Admin** and **Department Admin** (role-based access).
-- Management of the organisational structure:
-  **School of Sciences → Departments → Classes / Levels**.
-- Recording of **dues payments** for:
-  - **Freshers** (first-day collection by School admin, followed by department-level collection on the same day).
-  - **Continuing students** (collected by class representatives via a code-based page).
-- Automatic generation of **unique receipt numbers** for every payment.
-- **Souvenir tracking** — recording which souvenirs a fresher received at both the School and department levels.
-- **Pending freshers workflow** — a searchable page where department admins adopt freshers who already belong to the School.
-- **Admin-only receipt verification** — lookup a receipt number to see the full payment record.
-- **Dashboard & reports** — totals per department, class, and level; money collected per department; number of students who have paid; exportable data.
-
-### 4.2 Out of Scope (Later Phases)
-
-- Online/mobile payment integration (e.g., Mobile Money / bank gateway).
-- Public (student-facing) receipt lookup portal.
-- Student self-service portals.
-- Mobile native applications.
-- Multi-campus / multi-school expansion.
+1. **Only freshers are created at School level.** The School Admin captures the
+   fresher's record and assigns them to a department in the same step. No fresher
+   exists without a department, and no other role can create one.
+2. **Continuing students are created only by their department** (Dept Admin),
+   individually or by bulk CSV import. The School Admin never creates continuing
+   students.
+3. **Reps never create students.** The public rep page works strictly on students
+   already in the system. If a student number is not found, the page says the
+   student must first be added by their department admin.
+4. **Departments own their structure.** Each Dept Admin creates their own
+   levels/classes. A class may be a whole level (e.g. "Level 200") or one of
+   several classes within a level (e.g. "Level 200 A", "Level 200 B").
+5. **The public rep page is keyed by department code, not class code.** The rep
+   enters the department code, then picks the class from that department's list.
+   One code per department.
 
 ---
 
-## 5. Users & Roles
+## 2. The two collection flows
 
-| Role | Description | Access |
-|------|-------------|--------|
-| **School Admin** | Oversees the entire School of Sciences. Manages departments, creates department admins, configures per-department dues amounts, records fresher School-dues and souvenirs, sees school-wide reports. | Full admin dashboard. |
-| **Department Admin** | Manages a specific department. Adds pending freshers to their department, records department-dues and department souvenirs, uses the continuing-student collection workflow, verifies receipts, sees department reports. | Department-scoped admin dashboard. |
-| **Class Representative** | Represents a specific class. Has **no account and no dashboard**. Collects continuing-student dues through a **public page accessed with a per-class code**. | Public class page only. |
-
----
-
-## 6. How the System Works — Core Flows
-
-### 6.1 Freshers (First Day)
-
-The School takes fresher dues first and hands out School souvenirs. The department then records the student and takes department dues on the same day.
-
-1. **School Admin** registers the fresher and records their **School dues** payment, plus which **School souvenirs** were handed over.
-2. The fresher appears on a **"Pending Freshers"** page (they now belong to the School).
-3. **Department Admin** uses the **search feature** on the Pending Freshers page, finds the fresher, and **adds them to their department** — no need to re-enter the student's details.
-4. The **Department Admin** then records the **Department dues** for that student and links whichever **department souvenirs** were handed over.
-
-> **Benefit:** The student's records flow automatically from the School to the Department. Names are captured only once, eliminating duplication and error.
-
-### 6.2 Continuing Students
-
-Continuing students may not already be in the system, so:
-
-1. **Admins can add continuing students** to the system (capturing their details and assigning them to a department and class).
-2. The **Class Representative** opens the class's public page using a **per-class code** (the code contains the class name).
-3. The rep submits each continuing student's payment: **student, amount, payment method, date**.
-4. The system automatically issues a **unique receipt number**.
-5. The payment is recorded centrally against that class and department.
-
-### 6.3 Verification
-
-- On the **admin front**, a staff member can enter a **receipt number** to verify a student's payment record.
-- The full payment details are displayed instantly.
-
-### 6.4 Reporting
-
-- Admins can view **dashboards and reports** showing:
-  - Total money collected **per department**.
-  - Collections **per class / level**.
-  - Number of students who have paid versus outstanding.
-  - Breakdown of fresher vs continuing-student collections.
-  - Exportable (CSV) reports for further analysis.
-
----
-
-## 7. Organisational Structure Model
+### 2.1 Freshers (first day)
 
 ```
-School of Sciences
-│
-├── Department of Mathematics
-│     └── Classes / Levels (e.g., Level 100, Level 200, ...)
-│
-├── Department of Biology
-│     └── Classes / Levels
-│
-├── Department of Chemistry
-│     └── Classes / Levels
-│
-├── Department of Physics
-│     └── Classes / Levels
-│
-└── Department of Computer Science
-      └── Classes / Levels
+School Admin                  Dept Admin
+────────────                  ──────────
+1. Register fresher
+   (name, student number)
+2. Assign fresher to a
+   department  ──────────────►  appears in that dept's
+3. Record SCHOOL DUES              "assigned freshers" queue
+   + School souvenirs
+                                4. Admit the fresher
+                                   (pick class/level)
+                                5. Record DEPARTMENT DUES
+                                   + Department souvenirs
 ```
 
-Each **department** has a **configurable dues amount**, and each **class** has a unique **access code** used by its representative.
+- Freshers therefore receive **two receipts across the two steps** — a School
+  receipt at registration and a Department receipt at admission — because the two
+  collections happen at different times.
+- A fresher's admission status is `pending` until their department admits them.
+
+### 2.2 Continuing students (every year)
+
+- Dept Admin adds continuing students to their department (single add, or
+  **bulk CSV import** — upload, **preview** which rows are valid, then confirm).
+- Continuing students pay **School dues AND Department dues every year**.
+- Collection happens through the **class rep public page** (dept code → class)
+  or by the Dept Admin in the dashboard.
+- One collection session = **one combined, itemized receipt** (one receipt
+  number) listing the School dues portion and the Department dues portion. That
+  single receipt can be verified by **both** the School and the Department.
 
 ---
 
-## 8. Technology Stack
+## 3. Dues & money
 
-| Layer | Technology |
-|-------|------------|
-| **Frontend** | React (Vite), Tailwind CSS, React Router |
-| **Backend** | Node.js, Express (REST API) |
-| **Database** | PostgreSQL |
-| **Authentication** | JWT (JSON Web Tokens) + bcrypt password hashing |
-| **Development** | Git, npm scripts |
+| What | Amount source | Who sets it |
+|------|---------------|-------------|
+| School dues (per student, per year) | **One school-wide amount** in Settings | School Admin |
+| Department dues (per student, per year) | **One amount per department** (`departments.dues_amount`) | **Department Admin** (its own department) |
 
-This stack produces a **fast, modern, secure web application** that runs in any browser, so it works across the School's existing computers without installing software on each machine.
+- Souvenirs are split the same way: the **School souvenir catalogue** (given at
+  fresher registration) is managed by the School Admin; each department keeps and
+  configures its **own souvenir list** (given at fresher admission), and only a
+  department's own items can be handed out when its freshers are admitted.
 
----
-
-## 9. Proposed Data Model (Summary)
-
-| Table | Purpose |
-|-------|---------|
-| `users` | Admin accounts (School & Department), roles, password hashes |
-| `departments` | Department names and their configurable dues amounts |
-| `classes` | Classes/levels within a department, each with a unique access code |
-| `students` | Student records (both freshers and continuing students) |
-| `payments` | Every dues payment, type (School/Department), amount, method, and unique receipt number |
-| `souvenirs` | Inventory of souvenir items |
-| `student_souvenirs` | Records of which souvenirs were given to which fresher, and by whom |
+- Amounts auto-fill on collection forms (from the school-wide amount / the
+  department's amount) but remain editable at the time of collection.
+- Payment methods: `cash`, `momo`, `bank`.
 
 ---
 
-## 10. Security & Trustworthiness
+## 4. Receipts
 
-- **Role-based access control:** School and Department admins only see what they are allowed to.
-- **Secure authentication:** Passwords are hashed; sessions use JSON Web Tokens.
-- **Unique receipt numbers:** Every payment gets a distinct, hard-to-guess receipt number for verification.
-- **Audit trail:** Payments and souvenir distributions record who performed the action and when.
-- **Centralised, searchable data:** No fragile paper records; data is safely stored in PostgreSQL.
-- **Input validation & rate limiting:** Protects the public class-representative pages from abuse.
-
----
-
-## 11. Project Timeline (Estimate)
-
-| Phase | Activities | Estimated Duration |
-|-------|------------|--------------------|
-| **1. Setup** | Project scaffolding, database setup | 0.5 day |
-| **2. Backend** | Database schema, authentication, all API routes | 3 days |
-| **3. Frontend** | Admin dashboards, rep page, all screens | 4 days |
-| **4. Integration & Testing** | End-to-end testing of all flows | 2 days |
-| **5. Refinement & Documentation** | Polish, user guide, deployment notes | 1 day |
-
-**Estimated total: ~2 weeks** for the MVP.
+- Every collection event creates a **receipt** with a unique receipt number
+  (`UENR-…`) and one or more itemized **payment lines**:
+  - School-dues-only receipt (fresher registration)
+  - Department-dues-only receipt (fresher admission)
+  - Combined receipt with both lines (continuing-student yearly collection)
+- A receipt is shown on screen, e-mailed (dev mode logs it), and can be looked up
+  on the admin **Verify** page by receipt number.
+- School Admin can verify any receipt; Dept Admin can verify receipts issued in
+  their department.
 
 ---
 
-## 12. Expected Benefits
+## 5. Reporting
 
-- **Clear departmental revenue insight** — the School finally knows what each department generates from dues.
-- **Faster, accurate collection** — class reps submit dues digitally in seconds.
-- **Better souvenir accountability** — every souvenir handed out is recorded.
-- **Instant verification** — confirm any payment immediately via a receipt number.
-- **No more lost records** — all data is stored securely in one central system.
-- **Professional, modern image** — a digital system befitting a School of Sciences.
-
----
-
-## 13. Next Steps
-
-1. **Dean's approval** of this plan and the proposed scope.
-2. **Confirmation of the organisational structure** (final list of departments and their classes/levels).
-3. **Acknowledgement of the Student Number / ID format** used to identify students.
-4. **Provision of hosting details** (where the system will be deployed after development).
-5. Build, test, and roll out of the MVP, followed by training for the School Admin, Department Admins, and Class Representatives.
+- School Admin: school-wide — totals per department (department-dues revenue),
+  total school dues, per class/level, fresher vs continuing split, CSV export,
+  monthly trend, audit log.
+- Dept Admin: department-scoped equivalents (their own classes/levels and
+  department-dues revenue).
 
 ---
 
-*Prepared for the Dean, School of Sciences, University of Energy and Natural Resources, Sunyani.*
+## 6. Technology (unchanged from v1)
+
+| Layer | Tech |
+|-------|------|
+| Frontend | React (Vite), custom CSS (Baloo 2), React Router, axios |
+| Backend | Node.js, Express REST API |
+| Database | PostgreSQL |
+| Auth | JWT + bcrypt |
+| Extras | `express-rate-limit` on public rep routes, audit `transaction_log` |
+
+---
+
+## 7. Data model (v2 summary)
+
+| Table | Purpose / notable change |
+|-------|--------------------------|
+| `settings` | Key/value store, e.g. `school_dues_amount` |
+| `departments` | Name, **public `code`** (for the rep page), `dues_amount` |
+| `classes` | Owned by a department (`department_id`), has `level` + `name`; a department can have several classes in one level |
+| `users` | `school_admin` / `dept_admin` (dept admins bound to one department) |
+| `students` | Name, unique `student_no`, `is_fresher`, `department_id`, `class_id`, `admitted_at/admitted_by` (fresher lifecycle) |
+| `receipts` | One per collection event; unique `receipt_number`, student, method, `record_type` (`admin`/`rep`) |
+| `payments` | Itemized lines under a receipt: `type` (`school_dues`/`department_dues`), amount, dept/class |
+| `souvenirs` | Catalog: `category` (`school`/`department`); department souvenirs carry a `department_id` (each department owns its list) |
+| `student_souvenirs` | Which souvenirs a fresher received, at which level, by whom |
+| `transaction_log` | Audit trail |
+
+---
+
+## 8. Pages (client routes)
+
+| Route | Page | Role |
+|-------|------|------|
+| `/` | Landing — enter department code | Public |
+| `/rep/:code` | Class rep collection form (existing students only) | Public |
+| `/login` | Login | Public |
+| `/admin` | Dashboard | School / Dept |
+| `/admin/freshers` | Register freshers + assign dept (School); assigned-freshers admit queue (Dept) | Both, role-aware |
+| `/admin/students` | Continuing students: list, add single, bulk import w/ preview | Dept |
+| `/admin/collect` | Record continuing-student yearly dues (combined receipt) | Dept |
+| `/admin/verify` | Verify receipt by number | Both, role-aware |
+| `/admin/reports` | Reports + CSV export | Both, role-aware |
+| `/admin/settings` | School Admin: school-wide dues, school souvenirs, departments (read-only view), admins | Dept Admin: own dues amount, own souvenir list, own classes, rep code |
+| `/admin/audit` | Audit log | School |
+
+---
+
+## 9. Security & trust
+
+- Role-based access control enforced in the API middleware (school-only /
+  dept-scoped / public-rep).
+- Public rep endpoints are rate-limited and **never create students**.
+- JWT auth, bcrypt-hashed passwords, unique receipt numbers, audit trail for
+  every payment/student action.

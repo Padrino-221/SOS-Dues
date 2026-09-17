@@ -1,27 +1,42 @@
 const express = require('express');
 const pool = require('../db/pool');
 const { AppError } = require('../utils/errors');
-const { requireAuth, requireSchoolAdmin } = require('../middleware/auth');
+const { requireAuth, requireAnyAdmin } = require('../middleware/auth');
 const { logTransaction } = require('../utils/audit');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireAnyAdmin);
+
+function assertCanManageSouvenirs(req) {
+  if (!['school_admin', 'dept_admin'].includes(req.user.role)) {
+    throw new AppError('Only School or Department Admins can manage souvenirs', 403);
+  }
+}
 
 // ─── List souvenirs ───
-// School Admin: sees ALL souvenirs
-// Dept Admin: sees department-category souvenirs only (for their dept's distribution)
+// School Admin: supervision — sees school souvenirs and every department's
+//                souvenirs (read-only for department-owned items).
+// Dept Admin:   only their own department's souvenirs (the ones they hand out
+//                when admitting freshers).
 router.get('/', async (req, res, next) => {
   try {
-    let query = 'SELECT * FROM souvenirs';
-    const params = [];
-
-    if (req.user.role === 'dept_admin') {
-      query += ' WHERE category = $1';
-      params.push('department');
+    if (['dept_admin', 'dept_staff'].includes(req.user.role)) {
+      const { rows } = await pool.query(
+        `SELECT s.*, d.name AS department_name
+         FROM souvenirs s
+         LEFT JOIN departments d ON d.id = s.department_id
+         WHERE s.department_id = $1
+         ORDER BY s.name`,
+        [req.user.department_id]
+      );
+      return res.json(rows);
     }
-
-    query += ' ORDER BY category, name';
-    const { rows } = await pool.query(query, params);
+    const { rows } = await pool.query(
+      `SELECT s.*, d.name AS department_name
+       FROM souvenirs s
+       LEFT JOIN departments d ON d.id = s.department_id
+       ORDER BY s.category, s.department_id NULLS FIRST, s.name`
+    );
     res.json(rows);
   } catch (err) {
     next(err);
@@ -29,31 +44,50 @@ router.get('/', async (req, res, next) => {
 });
 
 // ─── Create souvenir ───
-// School Admin: can create any souvenir
-// Dept Admin: can create department-category souvenirs only
+// School Admin: school souvenirs only (category = 'school').
+// Dept Admin:   department souvenirs for their own department only.
 router.post('/', async (req, res, next) => {
   try {
+    assertCanManageSouvenirs(req);
     const { name, category, cost } = req.body;
     if (!name) throw new AppError('Souvenir name is required', 400);
 
-    const souvenirCategory = category || 'school';
+    let cat = category === 'department' ? 'department' : 'school';
+    let departmentId = null;
 
-    // Dept Admins can only create department souvenirs
-    if (req.user.role === 'dept_admin' && souvenirCategory !== 'department') {
-      throw new AppError('Department Admins can only create department-category souvenirs', 403);
+    if (req.user.role === 'dept_admin') {
+      // Dept admins may only add souvenirs for their own department
+      cat = 'department';
+      departmentId = req.user.department_id;
+    } else {
+      // School Admin manages the school-level souvenir catalogue only.
+      // Department souvenirs are configured by each department admin.
+      if (cat === 'department') {
+        throw new AppError(
+          'Department souvenirs are configured by each Department Admin. School Admin manages School souvenirs only.',
+          403
+        );
+      }
     }
 
     const { rows } = await pool.query(
-      'INSERT INTO souvenirs (name, category, cost) VALUES ($1, $2, $3) RETURNING *',
-      [name, souvenirCategory, cost ?? 0]
+      `INSERT INTO souvenirs (name, category, department_id, cost)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [name, cat, departmentId, cost ?? 0]
     );
 
-    logTransaction({
+    await logTransaction({
       admin_id: req.user.id,
       admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'souvenir_create',
-      description: `Created ${souvenirCategory} souvenir "${name}"`,
-      meta: { souvenir_id: rows[0].id, name, category: souvenirCategory, cost: cost ?? 0 },
+      description: `Created ${cat} souvenir "${name}"`,
+      meta: {
+        souvenir_id: rows[0].id,
+        name,
+        category: cat,
+        department_id: departmentId,
+        cost: cost ?? 0,
+      },
     });
 
     res.status(201).json(rows[0]);
@@ -63,33 +97,46 @@ router.post('/', async (req, res, next) => {
 });
 
 // ─── Update souvenir ───
-// School Admin: can update any souvenir
-// Dept Admin: can update department-category souvenirs only
 router.put('/:id', async (req, res, next) => {
   try {
+    assertCanManageSouvenirs(req);
     const { name, category, cost } = req.body;
+    const existing = await pool.query('SELECT * FROM souvenirs WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) throw new AppError('Souvenir not found', 404);
+    const row = existing.rows[0];
 
-    // Dept Admins can only modify department souvenirs
+    // Ownership rules mirror create
     if (req.user.role === 'dept_admin') {
-      const existing = await pool.query('SELECT category FROM souvenirs WHERE id = $1', [req.params.id]);
-      if (existing.rows.length === 0) throw new AppError('Souvenir not found', 404);
-      if (existing.rows[0].category !== 'department') {
-        throw new AppError('Department Admins can only modify department-category souvenirs', 403);
+      if (row.department_id !== req.user.department_id) {
+        throw new AppError('You can only manage your own department souvenirs', 403);
+      }
+      if (category && category !== 'department') {
+        throw new AppError('Dept Admins can only keep souvenirs as department souvenirs', 403);
+      }
+    } else {
+      if (row.category !== 'school') {
+        throw new AppError(
+          'School Admin only manages School souvenirs. Department souvenirs are managed by each department.',
+          403
+        );
+      }
+      if (category && category !== 'school') {
+        throw new AppError('School Admin can only create School souvenirs', 403);
       }
     }
 
+    const cat = row.category;
     const { rows } = await pool.query(
-      'UPDATE souvenirs SET name=$1, category=$2, cost=$3 WHERE id=$4 RETURNING *',
-      [name, category, cost ?? 0, req.params.id]
+      'UPDATE souvenirs SET name = $1, category = $2, cost = $3 WHERE id = $4 RETURNING *',
+      [name, cat, cost ?? row.cost, req.params.id]
     );
-    if (rows.length === 0) throw new AppError('Souvenir not found', 404);
 
-    logTransaction({
+    await logTransaction({
       admin_id: req.user.id,
       admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'souvenir_update',
-      description: `Updated ${category} souvenir "${name}"`,
-      meta: { souvenir_id: Number(req.params.id), name, category, cost: cost ?? 0 },
+      description: `Updated ${cat} souvenir "${name}"`,
+      meta: { souvenir_id: Number(req.params.id), name, category: cat, cost: cost ?? row.cost },
     });
 
     res.json(rows[0]);
@@ -99,28 +146,35 @@ router.put('/:id', async (req, res, next) => {
 });
 
 // ─── Delete souvenir ───
-// School Admin: can delete any souvenir
-// Dept Admin: can delete department-category souvenirs only
 router.delete('/:id', async (req, res, next) => {
   try {
-    // Dept Admins can only delete department souvenirs
+    assertCanManageSouvenirs(req);
+    const existing = await pool.query('SELECT * FROM souvenirs WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) throw new AppError('Souvenir not found', 404);
+    const row = existing.rows[0];
+
     if (req.user.role === 'dept_admin') {
-      const existing = await pool.query('SELECT category, name FROM souvenirs WHERE id = $1', [req.params.id]);
-      if (existing.rows.length === 0) throw new AppError('Souvenir not found', 404);
-      if (existing.rows[0].category !== 'department') {
-        throw new AppError('Department Admins can only delete department-category souvenirs', 403);
+      if (row.department_id !== req.user.department_id) {
+        throw new AppError('You can only manage your own department souvenirs', 403);
       }
+    } else if (row.category !== 'school') {
+      throw new AppError(
+        'School Admin only manages School souvenirs. Department souvenirs are managed by each department.',
+        403
+      );
     }
 
-    const { rows } = await pool.query('DELETE FROM souvenirs WHERE id=$1 RETURNING id, name, category', [req.params.id]);
-    if (rows.length === 0) throw new AppError('Souvenir not found', 404);
+    const { rows } = await pool.query(
+      'DELETE FROM souvenirs WHERE id = $1 RETURNING id, name, category',
+      [req.params.id]
+    );
 
-    logTransaction({
+    await logTransaction({
       admin_id: req.user.id,
       admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'souvenir_delete',
       description: `Deleted ${rows[0].category} souvenir "${rows[0].name}"`,
-      meta: { souvenir_id: rows[0].id, name: rows[0].name, category: rows[0].category },
+      meta: { souvenir_id: rows[0].id },
     });
 
     res.json({ message: 'Souvenir deleted' });

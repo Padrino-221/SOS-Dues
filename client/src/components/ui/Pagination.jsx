@@ -40,7 +40,9 @@ export default function Pagination({ page, totalPages, onPageChange, totalItems,
     <div className="flex between align-center" style={{ padding: '14px 0' }}>
       <span className="muted text-sm">
         {totalItems != null && (
-          <>Showing {startItem}–{endItem} of {totalItems}</>
+          <>
+            Showing {startItem}–{endItem} of {totalItems}
+          </>
         )}
       </span>
       <div className="flex align-center gap-sm">
@@ -53,7 +55,9 @@ export default function Pagination({ page, totalPages, onPageChange, totalItems,
         </button>
         {pages.map((p, i) =>
           p === '...' ? (
-            <span key={`ellipsis-${i}`} className="muted text-sm" style={{ padding: '0 4px' }}>…</span>
+            <span key={`ellipsis-${i}`} className="muted text-sm" style={{ padding: '0 4px' }}>
+              …
+            </span>
           ) : (
             <button
               key={p}

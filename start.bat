@@ -7,6 +7,12 @@ echo.
 
 cd /d "%~dp0"
 
+echo Stopping any existing Dues Management services...
+taskkill /F /FI "WINDOWTITLE eq Dues API" 2>nul
+taskkill /F /FI "WINDOWTITLE eq Dues Frontend" 2>nul
+taskkill /F /IM node.exe 2>nul
+timeout /t 2 /nobreak >nul
+
 echo Starting the API server...
 cd server
 start "Dues API" cmd /k "node src/index.js"
@@ -26,5 +32,5 @@ echo Opening the frontend in your default browser...
 timeout /t 5 /nobreak >nul
 start http://localhost:5173
 echo.
-echo Done. Close the two server windows to stop the system.
+echo Done. The launcher stopped any existing Dues servers before starting new ones.
 pause

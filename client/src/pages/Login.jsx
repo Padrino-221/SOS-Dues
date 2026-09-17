@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, ArrowRight, Eye, EyeSlash } from '@phosphor-icons/react';
+import { Lock, ArrowRight } from '@phosphor-icons/react';
+import PasswordInput from '../components/ui/PasswordInput';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -46,18 +46,12 @@ export default function Login() {
           </div>
           <div className="field">
             <label>Password</label>
-            <div className="pwd-wrap">
-              <input
-                className="input"
-                type={showPwd ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <button type="button" className="pwd-toggle" onClick={() => setShowPwd(!showPwd)} tabIndex={-1}>
-                {showPwd ? <EyeSlash size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
+            <PasswordInput
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
           </div>
           <button className="btn btn-primary w-full" disabled={loading}>
             <ArrowRight size={18} /> {loading ? 'Signing in...' : 'Sign In'}

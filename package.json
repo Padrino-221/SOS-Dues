@@ -3,11 +3,15 @@
   "version": "1.0.0",
   "description": "Dues Management System - School of Sciences, UENR Sunyani",
   "scripts": {
-    "install:all": "npm.cmd --prefix server install && npm.cmd --prefix client install",
-    "setup": "npm.cmd --prefix server run db:setup",
-    "dev:server": "npm.cmd --prefix server run dev",
-    "dev:client": "npm.cmd --prefix client run dev",
-    "dev": "concurrently \"npm.cmd --prefix server run dev\" \"npm.cmd --prefix client run dev\""
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "setup": "npm --prefix server run db:setup && npm --prefix server run db:seed",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "lint": "npm --prefix server run lint && npm --prefix client run lint",
+    "fmt": "npm --prefix server run fmt && npm --prefix client run fmt",
+    "fmt:check": "npm --prefix server run fmt:check && npm --prefix client run fmt:check",
+    "test": "npm --prefix server test"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

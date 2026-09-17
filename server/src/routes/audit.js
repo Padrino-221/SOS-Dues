@@ -3,7 +3,12 @@ const pool = require('../db/pool');
 const { requireAuth, requireSchoolAdmin } = require('../middleware/auth');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, (req, res, next) => {
+  if (req.user.role === 'school_staff' || req.user.role === 'dept_staff') {
+    return next(new (require('../utils/errors').AppError)('Access denied', 403));
+  }
+  next();
+});
 
 // ─── List audit log entries ───
 // School Admin: sees ALL entries
@@ -112,7 +117,9 @@ router.get('/export', async (req, res, next) => {
         r.admin_email || '',
         r.admin_role,
         r.meta ? JSON.stringify(r.meta) : '',
-      ].map(escCsv).join(',')
+      ]
+        .map(escCsv)
+        .join(',')
     );
     const csv = [header, ...lines].join('\n');
 

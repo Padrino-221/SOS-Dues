@@ -15,7 +15,7 @@ function getFirstDayOfMonth(year, month) {
 
 export default function DatePicker({ value, onChange, required }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState({ top: 0, bottom: 0, left: 0 });
   const [viewDate, setViewDate] = useState(() => {
     if (value) {
       const d = new Date(value + 'T00:00:00');
@@ -30,15 +30,28 @@ export default function DatePicker({ value, onChange, required }) {
   const updatePosition = () => {
     if (triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, left: r.left });
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      // Rough calendar height (incl. shadow) so it flips up when too low.
+      const CAL_H = 420;
+      const spaceBelow = window.innerHeight - r.bottom - 8;
+      const spaceAbove = r.top - 8;
+      const up = spaceBelow < CAL_H && spaceAbove > spaceBelow;
+      setPos({
+        top: r.bottom + 4,
+        bottom: window.innerHeight - r.top + 4,
+        left: Math.max(8, Math.min(r.left, vw - 306)),
+        up,
+      });
     }
   };
 
   useEffect(() => {
     const handler = (e) => {
       if (
-        triggerRef.current && !triggerRef.current.contains(e.target) &&
-        dropRef.current && !dropRef.current.contains(e.target)
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target) &&
+        dropRef.current &&
+        !dropRef.current.contains(e.target)
       ) {
         setOpen(false);
       }
@@ -50,7 +63,9 @@ export default function DatePicker({ value, onChange, required }) {
   useEffect(() => {
     if (open) {
       const scrollEl = triggerRef.current?.closest('.modal-card, .main-scroll');
-      const onScroll = () => { if (open) updatePosition(); };
+      const onScroll = () => {
+        if (open) updatePosition();
+      };
       scrollEl?.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('resize', updatePosition);
       return () => {
@@ -61,7 +76,11 @@ export default function DatePicker({ value, onChange, required }) {
   }, [open]);
 
   const displayValue = value
-    ? new Date(value + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    ? new Date(value + 'T00:00:00').toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
     : '';
 
   const daysInMonth = getDaysInMonth(viewDate.year, viewDate.month);
@@ -70,11 +89,15 @@ export default function DatePicker({ value, onChange, required }) {
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
   const prevMonth = () => {
-    setViewDate((v) => v.month === 0 ? { year: v.year - 1, month: 11 } : { ...v, month: v.month - 1 });
+    setViewDate((v) =>
+      v.month === 0 ? { year: v.year - 1, month: 11 } : { ...v, month: v.month - 1 }
+    );
   };
 
   const nextMonth = () => {
-    setViewDate((v) => v.month === 11 ? { year: v.year + 1, month: 0 } : { ...v, month: v.month + 1 });
+    setViewDate((v) =>
+      v.month === 11 ? { year: v.year + 1, month: 0 } : { ...v, month: v.month + 1 }
+    );
   };
 
   const selectDay = (day) => {
@@ -104,46 +127,81 @@ export default function DatePicker({ value, onChange, required }) {
         </div>
       </div>
       <input type="hidden" value={value || ''} required={required} />
-      {open && createPortal(
-        <div className="cs-calendar" ref={dropRef} style={{ position: 'fixed', top: pos.top, left: pos.left }}>
-          <div className="cs-cal-header">
-            <button type="button" className="cs-cal-nav" onClick={prevMonth}><CaretLeft size={16} /></button>
-            <span className="cs-cal-title">{MONTHS[viewDate.month]} {viewDate.year}</span>
-            <button type="button" className="cs-cal-nav" onClick={nextMonth}><CaretRight size={16} /></button>
-          </div>
-          <div className="cs-cal-days">
-            {DAYS.map((d) => <div key={d} className="cs-cal-dayname">{d}</div>)}
-          </div>
-          <div className="cs-cal-grid">
-            {cells.map((day, i) => {
-              if (day === null) return <div key={`e${i}`} className="cs-cal-empty" />;
-              const dateStr = `${viewDate.year}-${String(viewDate.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const isSelected = dateStr === value;
-              const isToday = dateStr === todayStr;
-              return (
-                <div
-                  key={day}
-                  className={`cs-cal-day ${isSelected ? 'cs-cal-selected' : ''} ${isToday ? 'cs-cal-today' : ''}`}
-                  onClick={() => selectDay(day)}
-                >
-                  {day}
+      {open &&
+        createPortal(
+          <div
+            className="cs-calendar"
+            ref={dropRef}
+            style={{
+              position: 'fixed',
+              top: pos.up ? undefined : pos.top,
+              bottom: pos.up ? pos.bottom : undefined,
+              left: pos.left,
+            }}
+          >
+            <div className="cs-cal-header">
+              <button type="button" className="cs-cal-nav" onClick={prevMonth}>
+                <CaretLeft size={16} />
+              </button>
+              <span className="cs-cal-title">
+                {MONTHS[viewDate.month]} {viewDate.year}
+              </span>
+              <button type="button" className="cs-cal-nav" onClick={nextMonth}>
+                <CaretRight size={16} />
+              </button>
+            </div>
+            <div className="cs-cal-days">
+              {DAYS.map((d) => (
+                <div key={d} className="cs-cal-dayname">
+                  {d}
                 </div>
-              );
-            })}
-          </div>
-          <div className="cs-cal-footer">
-            <button type="button" className="cs-cal-today-btn" onClick={() => {
-              const mm = String(today.getMonth() + 1).padStart(2, '0');
-              const dd = String(today.getDate()).padStart(2, '0');
-              onChange(`${today.getFullYear()}-${mm}-${dd}`);
-              setViewDate({ year: today.getFullYear(), month: today.getMonth() });
-              setOpen(false);
-            }}>Today</button>
-            <button type="button" className="cs-cal-clear-btn" onClick={() => { onChange(''); setOpen(false); }}>Clear</button>
-          </div>
-        </div>,
-        document.body
-      )}
+              ))}
+            </div>
+            <div className="cs-cal-grid">
+              {cells.map((day, i) => {
+                if (day === null) return <div key={`e${i}`} className="cs-cal-empty" />;
+                const dateStr = `${viewDate.year}-${String(viewDate.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateStr === value;
+                const isToday = dateStr === todayStr;
+                return (
+                  <div
+                    key={day}
+                    className={`cs-cal-day ${isSelected ? 'cs-cal-selected' : ''} ${isToday ? 'cs-cal-today' : ''}`}
+                    onClick={() => selectDay(day)}
+                  >
+                    {day}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="cs-cal-footer">
+              <button
+                type="button"
+                className="cs-cal-today-btn"
+                onClick={() => {
+                  const mm = String(today.getMonth() + 1).padStart(2, '0');
+                  const dd = String(today.getDate()).padStart(2, '0');
+                  onChange(`${today.getFullYear()}-${mm}-${dd}`);
+                  setViewDate({ year: today.getFullYear(), month: today.getMonth() });
+                  setOpen(false);
+                }}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className="cs-cal-clear-btn"
+                onClick={() => {
+                  onChange('');
+                  setOpen(false);
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 }

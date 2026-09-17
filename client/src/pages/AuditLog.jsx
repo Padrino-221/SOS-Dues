@@ -12,7 +12,8 @@ import {
   Pencil,
   Gift,
   ShieldCheck,
-  MagnifyingGlass,
+  UploadSimple,
+  Gear,
   DownloadSimple,
   ArrowLeft,
   ArrowRight,
@@ -34,74 +35,77 @@ function Toast({ message, type, onClose }) {
 
 const TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
-  { value: 'payment', label: 'Payments' },
+  { value: 'payment', label: 'Payments / Receipts' },
+  { value: 'fresher_register', label: 'Fresher Registered' },
+  { value: 'fresher_admit', label: 'Fresher Admitted' },
   { value: 'student_create', label: 'Student Created' },
+  { value: 'student_bulk_import', label: 'Bulk Import' },
   { value: 'student_update', label: 'Student Updated' },
   { value: 'student_delete', label: 'Student Deleted' },
-  { value: 'student_adopt', label: 'Student Adopted' },
+  { value: 'class_create', label: 'Class Created' },
   { value: 'department_create', label: 'Department Created' },
   { value: 'department_update', label: 'Department Updated' },
   { value: 'department_delete', label: 'Department Deleted' },
-  { value: 'department_dues_update', label: 'Dept Dues Config' },
   { value: 'souvenir_create', label: 'Souvenir Created' },
   { value: 'souvenir_update', label: 'Souvenir Updated' },
   { value: 'souvenir_delete', label: 'Souvenir Deleted' },
-  { value: 'souvenir_distribution', label: 'Souvenir Distributed' },
-  { value: 'payment_update', label: 'Payment Updated' },
+  { value: 'settings_update', label: 'Settings Updated' },
 ];
 
 const ROLE_OPTIONS = [
   { value: '', label: 'All Roles' },
   { value: 'SCHOOL_ADMIN', label: 'School Admin' },
   { value: 'DEPT_ADMIN', label: 'Dept Admin' },
+  { value: 'DEPT_STAFF', label: 'Dept Staff' },
   { value: 'REP', label: 'Class Rep' },
   { value: 'SYSTEM', label: 'System' },
 ];
 
 const TYPE_ICONS = {
   payment: { Icon: CurrencyCircleDollar, color: 'green' },
-  payment_update: { Icon: Pencil, color: 'gold' },
+  fresher_register: { Icon: UserPlus, color: 'navy' },
+  fresher_admit: { Icon: Users, color: 'navy' },
   student_create: { Icon: UserPlus, color: 'green' },
+  student_bulk_import: { Icon: UploadSimple, color: 'green' },
   student_update: { Icon: Pencil, color: 'navy' },
   student_delete: { Icon: Trash, color: 'red' },
-  student_adopt: { Icon: Users, color: 'navy' },
+  class_create: { Icon: Pencil, color: 'navy' },
   department_create: { Icon: ShieldCheck, color: 'navy' },
   department_update: { Icon: Pencil, color: 'gold' },
   department_delete: { Icon: Trash, color: 'red' },
-  department_dues_update: { Icon: CurrencyCircleDollar, color: 'gold' },
   souvenir_create: { Icon: Gift, color: 'navy' },
   souvenir_update: { Icon: Pencil, color: 'gold' },
   souvenir_delete: { Icon: Trash, color: 'red' },
-  souvenir_distribution: { Icon: Gift, color: 'green' },
+  settings_update: { Icon: Gear, color: 'gold' },
 };
 
 const TYPE_BADGES = {
   payment: 'badge-green',
-  payment_update: 'badge-gold',
+  fresher_register: 'badge-navy',
+  fresher_admit: 'badge-navy',
   student_create: 'badge-green',
+  student_bulk_import: 'badge-green',
   student_update: 'badge-navy',
   student_delete: 'badge-red',
-  student_adopt: 'badge-navy',
+  class_create: 'badge-navy',
   department_create: 'badge-navy',
   department_update: 'badge-gold',
   department_delete: 'badge-red',
-  department_dues_update: 'badge-gold',
   souvenir_create: 'badge-navy',
   souvenir_update: 'badge-gold',
   souvenir_delete: 'badge-red',
-  souvenir_distribution: 'badge-green',
+  settings_update: 'badge-gold',
 };
 
 function formatType(type) {
-  return type
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function formatRole(role) {
   const map = {
     SCHOOL_ADMIN: 'School Admin',
     DEPT_ADMIN: 'Dept Admin',
+    DEPT_STAFF: 'Dept Staff',
     REP: 'Class Rep',
     SYSTEM: 'System',
   };
@@ -126,21 +130,24 @@ export default function AuditLog() {
     setToasts((prev) => [...prev, { id, message, type }]);
   }, []);
 
-  const loadEntries = useCallback(async (page = 1) => {
-    setLoading(true);
-    try {
-      const params = { page, limit: 20 };
-      if (typeFilter) params.type = typeFilter;
-      if (roleFilter) params.admin_role = roleFilter;
-      const res = await api.get('/audit', { params });
-      setEntries(res.data.entries);
-      setPagination(res.data.pagination);
-    } catch (err) {
-      addToast('Failed to load audit log', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [typeFilter, roleFilter, addToast]);
+  const loadEntries = useCallback(
+    async (page = 1) => {
+      setLoading(true);
+      try {
+        const params = { page, limit: 20 };
+        if (typeFilter) params.type = typeFilter;
+        if (roleFilter) params.admin_role = roleFilter;
+        const res = await api.get('/audit', { params });
+        setEntries(res.data.entries);
+        setPagination(res.data.pagination);
+      } catch (err) {
+        addToast('Failed to load audit log', 'error');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [typeFilter, roleFilter, addToast]
+  );
 
   const loadStats = useCallback(async () => {
     if (!isSchool) return;
@@ -186,17 +193,22 @@ export default function AuditLog() {
     <div>
       <div className="toast-container">
         {toasts.map((t) => (
-          <Toast key={t.id} message={t.message} type={t.type} onClose={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} />
+          <Toast
+            key={t.id}
+            message={t.message}
+            type={t.type}
+            onClose={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+          />
         ))}
       </div>
 
-      <div className="flex between align-center mb-md">
+      <div className="page-head">
         <div>
-          <h1><Clock size={28} style={{ marginRight: 10, verticalAlign: -5 }} />Audit Log</h1>
+          <h1>Audit Log</h1>
           <p className="subtitle">
             {isSchool
-              ? 'View all system transactions — payments, student changes, configuration updates, and more.'
-              : `View transactions related to ${user.department_name} and your own actions.`}
+              ? 'All system activity — payments, student changes, and configuration.'
+              : `Activity for ${user.department_name} and your own actions.`}
           </p>
         </div>
         <button className="btn btn-primary" onClick={downloadCsv}>
@@ -208,16 +220,24 @@ export default function AuditLog() {
       {isSchool && stats && (
         <div className="grid grid-3 mb-lg">
           <div className="stat-card">
+            <div className="stat-icon-badge navy">
+              <Clock size={22} />
+            </div>
             <div className="stat-info">
               <div className="stat-label">Total Transactions</div>
               <div className="stat-value">{stats.total}</div>
             </div>
-            <div className="stat-icon-badge navy"><Clock size={22} /></div>
           </div>
           {stats.byType.slice(0, 2).map((s) => {
-            const { Icon, color } = TYPE_ICONS[s.transaction_type] || { Icon: Clock, color: 'navy' };
+            const { Icon, color } = TYPE_ICONS[s.transaction_type] || {
+              Icon: Clock,
+              color: 'navy',
+            };
             return (
               <div key={s.transaction_type} className="stat-card">
+                <div className={`stat-icon-badge ${color}`}>
+                  <Icon size={22} />
+                </div>
                 <div className="stat-info">
                   <div className="stat-label">{formatType(s.transaction_type)}</div>
                   <div className="stat-value">{s.count}</div>
@@ -225,7 +245,6 @@ export default function AuditLog() {
                     Last: {new Date(s.last_occurrence).toLocaleDateString()}
                   </div>
                 </div>
-                <div className={`stat-icon-badge ${color}`}><Icon size={22} /></div>
               </div>
             );
           })}
@@ -236,16 +255,52 @@ export default function AuditLog() {
       <div className="card">
         <div className="flex gap-md align-center" style={{ flexWrap: 'wrap' }}>
           <div style={{ width: 220 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 4, display: 'block' }}>Transaction Type</label>
-            <Select value={typeFilter} onChange={(v) => { setTypeFilter(v); }} options={TYPE_OPTIONS} placeholder="All Types" />
+            <label
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--gray-600)',
+                marginBottom: 4,
+                display: 'block',
+              }}
+            >
+              Transaction Type
+            </label>
+            <Select
+              value={typeFilter}
+              onChange={(v) => {
+                setTypeFilter(v);
+              }}
+              options={TYPE_OPTIONS}
+              placeholder="All Types"
+            />
           </div>
           <div style={{ width: 180 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-600)', marginBottom: 4, display: 'block' }}>Performed By</label>
-            <Select value={roleFilter} onChange={(v) => { setRoleFilter(v); }} options={ROLE_OPTIONS} placeholder="All Roles" />
+            <label
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--gray-600)',
+                marginBottom: 4,
+                display: 'block',
+              }}
+            >
+              Performed By
+            </label>
+            <Select
+              value={roleFilter}
+              onChange={(v) => {
+                setRoleFilter(v);
+              }}
+              options={ROLE_OPTIONS}
+              placeholder="All Roles"
+            />
           </div>
           <div style={{ flex: 1 }} />
           <div style={{ textAlign: 'right', paddingTop: 18 }}>
-            <span className="muted text-sm">{pagination.total} transaction{pagination.total !== 1 ? 's' : ''} found</span>
+            <span className="muted text-sm">
+              {pagination.total} transaction{pagination.total !== 1 ? 's' : ''} found
+            </span>
           </div>
         </div>
       </div>
@@ -253,11 +308,17 @@ export default function AuditLog() {
       {/* ─── Table ─── */}
       <div className="card">
         {loading && (
-          <p className="muted text-sm" style={{ padding: 20, textAlign: 'center' }}>Loading...</p>
+          <p className="muted text-sm" style={{ padding: 20, textAlign: 'center' }}>
+            Loading...
+          </p>
         )}
 
         {!loading && entries.length === 0 && (
-          <p className="muted text-sm" style={{ padding: 20, textAlign: 'center' }}>{isSchool ? 'No audit log entries found.' : 'No audit log entries found for your department.'}</p>
+          <p className="muted text-sm" style={{ padding: 20, textAlign: 'center' }}>
+            {isSchool
+              ? 'No audit log entries found.'
+              : 'No audit log entries found for your department.'}
+          </p>
         )}
 
         {!loading && entries.length > 0 && (
@@ -275,7 +336,10 @@ export default function AuditLog() {
               </thead>
               <tbody>
                 {entries.map((entry, idx) => {
-                  const { Icon, color } = TYPE_ICONS[entry.transaction_type] || { Icon: Clock, color: 'navy' };
+                  const { Icon, color } = TYPE_ICONS[entry.transaction_type] || {
+                    Icon: Clock,
+                    color: 'navy',
+                  };
                   const badge = TYPE_BADGES[entry.transaction_type] || 'badge-gray';
                   const isExpanded = expandedId === entry.id;
 
@@ -284,8 +348,18 @@ export default function AuditLog() {
                       <tr
                         style={{ cursor: entry.meta ? 'pointer' : 'default' }}
                         onClick={() => entry.meta && setExpandedId(isExpanded ? null : entry.id)}
+                        tabIndex={entry.meta ? 0 : undefined}
+                        role={entry.meta ? 'button' : undefined}
+                        onKeyDown={(e) => {
+                          if (entry.meta && (e.key === 'Enter' || e.key === ' ')) {
+                            e.preventDefault();
+                            setExpandedId(isExpanded ? null : entry.id);
+                          }
+                        }}
                       >
-                        <td className="muted text-sm">{idx + 1 + (pagination.page - 1) * pagination.limit}</td>
+                        <td className="muted text-sm">
+                          {idx + 1 + (pagination.page - 1) * pagination.limit}
+                        </td>
                         <td>
                           <div style={{ fontSize: 14 }}>
                             {new Date(entry.created_at).toLocaleDateString()}
@@ -295,7 +369,10 @@ export default function AuditLog() {
                           </div>
                         </td>
                         <td>
-                          <span className={`badge ${badge}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <span
+                            className={`badge ${badge}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          >
                             <Icon size={12} /> {formatType(entry.transaction_type)}
                           </span>
                         </td>
@@ -303,9 +380,14 @@ export default function AuditLog() {
                         <td>
                           {entry.admin_name ? (
                             <div>
-                              <div style={{ fontSize: 14, fontWeight: 500 }}>{entry.admin_name}</div>
+                              <div style={{ fontSize: 14, fontWeight: 500 }}>
+                                {entry.admin_name}
+                              </div>
                               <div className="muted text-xs">
-                                <span className={`badge badge-gray`} style={{ fontSize: 10, padding: '1px 6px' }}>
+                                <span
+                                  className={`badge badge-gray`}
+                                  style={{ fontSize: 10, padding: '1px 6px' }}
+                                >
                                   {formatRole(entry.admin_role)}
                                 </span>
                               </div>
@@ -318,7 +400,14 @@ export default function AuditLog() {
                           {entry.meta && (
                             <button
                               className="btn btn-ghost btn-xs"
-                              onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : entry.id); }}
+                              aria-label={
+                                isExpanded ? 'Hide audit metadata' : 'Show audit metadata'
+                              }
+                              aria-expanded={isExpanded}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedId(isExpanded ? null : entry.id);
+                              }}
                             >
                               {isExpanded ? '▲' : '▼'}
                             </button>
@@ -328,20 +417,37 @@ export default function AuditLog() {
 
                       {isExpanded && entry.meta && (
                         <tr key={`${entry.id}-detail`}>
-                          <td colSpan={6} style={{ background: 'var(--cream-light)', padding: '12px 20px' }}>
+                          <td
+                            colSpan={6}
+                            style={{ background: 'var(--cream-light)', padding: '12px 20px' }}
+                          >
                             <div style={{ fontSize: 13 }}>
                               <strong style={{ color: 'var(--navy)' }}>Metadata:</strong>
-                              <pre style={{
-                                marginTop: 8,
-                                padding: '10px 14px',
-                                background: 'var(--white)',
-                                border: '1px solid var(--border)',
-                                borderRadius: 8,
-                                fontSize: 12,
-                                fontFamily: "'Baloo 2', monospace",
-                                overflowX: 'auto',
-                                maxWidth: '100%',
-                              }}>
+                              <div className="audit-meta-grid">
+                                {Object.entries(entry.meta).map(([key, value]) => (
+                                  <div key={key}>
+                                    <span>{formatType(key)}</span>
+                                    <strong>
+                                      {typeof value === 'object'
+                                        ? JSON.stringify(value)
+                                        : String(value)}
+                                    </strong>
+                                  </div>
+                                ))}
+                              </div>
+                              <pre
+                                style={{
+                                  marginTop: 8,
+                                  padding: '10px 14px',
+                                  background: 'var(--white)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: 8,
+                                  fontSize: 12,
+                                  fontFamily: "'Plus Jakarta Sans', monospace",
+                                  overflowX: 'auto',
+                                  maxWidth: '100%',
+                                }}
+                              >
                                 {JSON.stringify(entry.meta, null, 2)}
                               </pre>
                             </div>

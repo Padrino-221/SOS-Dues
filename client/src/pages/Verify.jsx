@@ -5,7 +5,7 @@ import { CheckCircle, MagnifyingGlass } from '@phosphor-icons/react';
 
 export default function Verify() {
   const { user } = useAuth();
-  const isSchool = user?.role === 'school_admin';
+  const schoolSide = ['school_admin', 'school_staff'].includes(user?.role);
   const [number, setNumber] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
@@ -21,7 +21,7 @@ export default function Verify() {
     }
     setLoading(true);
     try {
-      const res = await api.get(`/payments/receipts/${encodeURIComponent(number.trim())}`);
+      const res = await api.get(`/receipts/verify/${encodeURIComponent(number.trim())}`);
       setResult(res.data);
     } catch (err) {
       if (err.response?.status === 404) setError('No record found for this receipt number.');
@@ -31,24 +31,31 @@ export default function Verify() {
     }
   };
 
+  const recorderLabel = (r) => {
+    if (r.record_type === 'rep') return 'Class Rep';
+    return r.recorded_by_name || 'Admin';
+  };
+
   return (
     <div>
-      <div className="mb-md">
-        <h1>Verify Receipt</h1>
-        <p className="subtitle">
-          {isSchool
-            ? 'Enter a receipt number to confirm a student\'s payment record across all departments.'
-            : `Enter a receipt number to confirm a payment record for ${user.department_name}.`}
-        </p>
+      <div className="page-head">
+        <div>
+          <h1>Verify Receipt</h1>
+          <p className="subtitle">
+            {schoolSide
+              ? 'Confirm any payment with a receipt number.'
+              : `Confirm a receipt issued in ${user?.department_name}.`}
+          </p>
+        </div>
       </div>
 
-      <div className="card" style={{ maxWidth: 560 }}>
+      <div className="card" style={{ maxWidth: 620 }}>
         <form onSubmit={verify}>
           <div className="field">
             <label>Receipt Number</label>
             <input
               className="input"
-              placeholder="UENR-DUES-..."
+              placeholder="e.g. SOS-DUES-SCH-UEB3227523-1"
               value={number}
               onChange={(e) => setNumber(e.target.value)}
             />
@@ -61,25 +68,113 @@ export default function Verify() {
 
         {result && (
           <div className="mt-md">
-            <div className="alert alert-success"><CheckCircle size={18} /> Payment is valid and recorded.</div>
-            <div className="card">
-              <div className="table-wrap">
-                <table className="table">
-                  <tbody>
-                    <tr><td><strong>Receipt Number</strong></td><td><span className="code-cell">{result.receipt_number}</span></td></tr>
-                    <tr><td><strong>Student</strong></td><td>{result.student_name}</td></tr>
-                    <tr><td><strong>Student No</strong></td><td>{result.student_no || '-'}</td></tr>
-                    <tr><td><strong>Type</strong></td><td><span className={`badge ${result.type === 'school_dues' ? 'badge-navy' : 'badge-green'}`}>{result.type === 'school_dues' ? 'School Dues' : 'Department Dues'}</span></td></tr>
-                    <tr><td><strong>Amount</strong></td><td>GHS {Number(result.amount).toFixed(2)}</td></tr>
-                    <tr><td><strong>Method</strong></td><td style={{ textTransform: 'capitalize' }}>{result.method === 'momo' ? 'Mobile Money' : result.method}</td></tr>
-                    <tr><td><strong>Department</strong></td><td>{result.department_name || '-'}</td></tr>
-                    <tr><td><strong>Class</strong></td><td>{result.class_name || '-'}</td></tr>
-                    <tr><td><strong>Recorded By</strong></td><td><span className="badge badge-gray">{result.admin_role === 'SCHOOL_ADMIN' ? 'School Admin' : result.admin_role === 'DEPT_ADMIN' ? 'Dept Admin' : result.record_type}</span></td></tr>
-                    <tr><td><strong>Paid On</strong></td><td>{new Date(result.paid_at).toLocaleString()}</td></tr>
-                  </tbody>
-                </table>
-              </div>
+            <div className="alert alert-success">
+              <CheckCircle size={18} /> This receipt is valid and recorded.
             </div>
+
+            <div className="table-wrap">
+              <table className="table">
+                <tbody>
+                  <tr>
+                    <td>
+                      <strong>Receipt Number</strong>
+                    </td>
+                    <td>
+                      <span className="code-cell">{result.receipt_number}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Student</strong>
+                    </td>
+                    <td>
+                      {result.student_name}{' '}
+                      <span className="muted text-sm">({result.student_no || 'no number'})</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Department</strong>
+                    </td>
+                    <td>{result.department_name || '—'}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Class</strong>
+                    </td>
+                    <td>{result.class_name || '—'}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Method</strong>
+                    </td>
+                    <td style={{ textTransform: 'capitalize' }}>
+                      {result.method === 'momo' ? 'Mobile Money' : result.method}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Paid On</strong>
+                    </td>
+                    <td>{new Date(result.paid_at).toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Recorded By</strong>
+                    </td>
+                    <td>
+                      <span className="badge badge-gray">{recorderLabel(result)}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card" style={{ background: 'var(--cream-light)', marginTop: 12 }}>
+              <h3 className="mb">Payment Breakdown</h3>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.lines.map((l) => (
+                    <tr key={l.id || l.type}>
+                      <td>
+                        {l.type === 'school_dues' ? 'School Dues' : 'Department Dues'}
+                        <span className="muted text-xs" style={{ marginLeft: 6 }}>
+                          (
+                          {l.type === 'school_dues'
+                            ? 'School'
+                            : l.department_name || result.department_name || ''}
+                          )
+                        </span>
+                      </td>
+                      <td className="fw-600">GHS {Number(l.amount).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td>
+                      <strong>Total Paid</strong>
+                    </td>
+                    <td className="fw-800">GHS {Number(result.total_amount).toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {result.souvenirs?.length > 0 && (
+              <div className="mt-sm">
+                <strong className="text-sm">Souvenirs received:</strong>{' '}
+                {result.souvenirs.map((s) => (
+                  <span key={s.name} className="badge badge-green" style={{ marginRight: 6 }}>
+                    {s.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,109 +1,117 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { TrendUp, DownloadSimple, CalendarX, X } from '@phosphor-icons/react';
 import {
-  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-} from 'recharts';
-
-const METHOD_COLORS = ['#1A2868', '#8B7D35', '#16a34a'];
-const METHOD_LABELS = { cash: 'Cash', momo: 'Mobile Money', bank: 'Bank Transfer' };
-
-function StatCard({ label, value, icon, variant }) {
-  return (
-    <div className="stat-card">
-      <div className="stat-info">
-        <div className="stat-label">{label}</div>
-        <div className={`stat-value ${variant || ''}`}>{value}</div>
-      </div>
-      <div className={`stat-icon-badge ${variant || 'navy'}`}>{icon}</div>
-    </div>
-  );
-}
-
-function CollapsibleCard({ title, children, height, defaultOpen = false }) {
-  return (
-    <details className="card" open={defaultOpen}>
-      <summary>
-        <span className="caret">▶</span>
-        <h3 style={{ display: 'inline' }}>{title}</h3>
-      </summary>
-      <div style={{ padding: '0 24px 24px' }}>
-        {height ? (
-          <div style={{ height }}>
-            <ResponsiveContainer width="100%" height="100%">
-              {children}
-            </ResponsiveContainer>
-          </div>
-        ) : children}
-      </div>
-    </details>
-  );
-}
-
-const CustomPieTooltip = ({ active, payload }) => {
-  if (!active || !payload?.length) return null;
-  const d = payload[0];
-  return (
-    <div style={{
-      background: '#fff', border: '1px solid #E5E3DA', borderRadius: 8,
-      padding: '10px 14px', fontSize: 14, boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    }}>
-      <div style={{ fontWeight: 600, color: '#1A2868' }}>{d.name || d.payload?.method}</div>
-      <div style={{ color: '#4B5563' }}>GHS {Number(d.value).toFixed(2)}</div>
-      {d.payload?.count != null && <div style={{ color: '#6B7280', fontSize: 12 }}>{d.payload.count} transaction{d.payload.count !== 1 ? 's' : ''}</div>}
-    </div>
-  );
-};
-
-const CustomBarTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div style={{
-      background: '#fff', border: '1px solid #E5E3DA', borderRadius: 8,
-      padding: '10px 14px', fontSize: 14, boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    }}>
-      <div style={{ fontWeight: 600, color: '#1A2868', marginBottom: 4 }}>{label}</div>
-      {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color, fontSize: 13 }}>
-          {p.name}: {typeof p.value === 'number' && p.value > 100 ? `GHS ${Number(p.value).toFixed(0)}` : p.value}
-        </div>
-      ))}
-    </div>
-  );
-};
+  DownloadSimple,
+  X,
+  Buildings,
+  ChartBar,
+  Funnel,
+  Student,
+  TrendUp,
+} from '@phosphor-icons/react';
+import DatePicker from '../components/ui/DatePicker';
+import Select from '../components/ui/Select';
+import Pagination from '../components/ui/Pagination';
+import usePagination from '../components/ui/usePagination';
 
 export default function Reports() {
   const { user } = useAuth();
   const isSchool = user?.role === 'school_admin';
   const [data, setData] = useState(null);
-  const [charts, setCharts] = useState(null);
   const [monthly, setMonthly] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showUpdating, setShowUpdating] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const loadSeq = useRef(0);
+  const slowTimer = useRef(null);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [selectedDeptId, setSelectedDeptId] = useState('');
+  const deptPager = usePagination(data?.departments || [], 10);
 
+  const filteredClasses = useMemo(() => {
+    const list = data?.classes || [];
+    if (!selectedDeptId) return list;
+
+    const deptObj = (data?.departments || []).find(
+      (d) => String(d.id) === String(selectedDeptId) || String(d.name) === String(selectedDeptId)
+    );
+    const targetId = deptObj ? String(deptObj.id) : String(selectedDeptId);
+    const targetName = deptObj ? String(deptObj.name).toLowerCase() : String(selectedDeptId).toLowerCase();
+
+    return list.filter((c) => {
+      const cDeptId = c.department_id ? String(c.department_id) : '';
+      const cDeptName = c.department_name ? String(c.department_name).toLowerCase() : '';
+      return (cDeptId && cDeptId === targetId) || (cDeptName && cDeptName === targetName);
+    });
+  }, [data?.classes, data?.departments, selectedDeptId]);
+
+  const classPager = usePagination(filteredClasses, 10);
+
+  const [academicYear, setAcademicYear] = useState('');
+  const [activeAcademicYear, setActiveAcademicYear] = useState('');
   const buildParams = useCallback(() => {
     const params = {};
     if (from) params.from = from;
     if (to) params.to = to;
+    if (academicYear) params.academic_year = academicYear;
     return params;
-  }, [from, to]);
+  }, [from, to, academicYear]);
 
-  const loadAll = useCallback(() => {
+  const loadAll = useCallback(async () => {
     const params = buildParams();
-    setData(null);
-    setCharts(null);
-    setMonthly(null);
-    api.get('/reports/summary', { params }).then((res) => setData(res.data)).catch(() => {});
-    api.get('/reports/charts', { params }).then((res) => setCharts(res.data)).catch(() => {});
-    api.get('/reports/monthly', { params }).then((res) => setMonthly(res.data)).catch(() => {});
+    const run = ++loadSeq.current;
+    setRefreshing(true);
+    setLoadError('');
+    try {
+      // Keep showing the current data while refetching (no page blink).
+      const [s, m] = await Promise.all([
+        api.get('/reports/summary', { params }),
+        api.get('/reports/monthly', { params }),
+      ]);
+      if (run === loadSeq.current) {
+        setData(s.data);
+        setMonthly(m.data);
+      }
+    } catch (err) {
+      setLoadError('Reports could not be updated. Check your connection and try again.');
+    } finally {
+      if (run === loadSeq.current) setRefreshing(false);
+    }
   }, [buildParams]);
 
-  useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { loadAll(); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
-  const clearDates = () => { setFrom(''); setTo(''); };
+  useEffect(() => {
+    api
+      .get('/settings')
+      .then((res) => {
+        const activeYear = res.data?.active_academic_year || '';
+        setActiveAcademicYear(activeYear);
+        setAcademicYear((current) => current || activeYear);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Only surface the "Updating…" notice when a refresh is genuinely slow —
+  // fast local refetches should swap data silently with no flicker.
+  useEffect(() => {
+    if (refreshing) {
+      slowTimer.current = setTimeout(() => setShowUpdating(true), 350);
+    } else {
+      setShowUpdating(false);
+    }
+    return () => clearTimeout(slowTimer.current);
+  }, [refreshing]);
+
+  const clearDates = () => {
+    setFrom('');
+    setTo('');
+    setAcademicYear('');
+  };
 
   const downloadCsv = async () => {
     const params = buildParams();
@@ -116,194 +124,129 @@ export default function Reports() {
     window.URL.revokeObjectURL(url);
   };
 
-  if (!data) return <p>Loading...</p>;
+  if (!data)
+    return (
+      <div className="page-state">
+        <span className="spin-dot" /> {loadError || 'Loading reports…'}{' '}
+        {loadError && (
+          <button className="btn btn-outline btn-xs" onClick={loadAll}>
+            Retry
+          </button>
+        )}
+      </div>
+    );
   const t = data.totals;
-  const hasDateFilter = from || to;
+  const hasDateFilter = from || to || academicYear;
 
-  // ── Chart data preparation ──
-  const pieData = charts?.methods?.map((m) => ({
-    name: METHOD_LABELS[m.method] || m.method,
-    value: Number(m.total),
-    count: m.count,
-    method: m.method,
-  })) || [];
+  const academicYearOptions = activeAcademicYear
+    ? [{ value: activeAcademicYear, label: activeAcademicYear }]
+    : [];
 
-  const clearanceData = charts?.clearance?.map((c) => ({
-    name: c.department_name,
-    'School Dues Paid': Number(c.school_dues_paid),
-    'Dept Dues Paid': Number(c.dept_dues_paid),
-    'Total Students': Number(c.total_students),
-  })) || [];
-
-  const methodTypeMap = {};
-  (charts?.methodTypes || []).forEach((mt) => {
-    if (!methodTypeMap[mt.method]) methodTypeMap[mt.method] = { method: METHOD_LABELS[mt.method] || mt.method };
-    methodTypeMap[mt.method][mt.type === 'school_dues' ? 'School Dues' : 'Dept Dues'] = Number(mt.count);
-  });
-  const methodTypeData = Object.values(methodTypeMap);
-
-  const souvenirData = charts?.souvenirs?.map((s) => ({
-    name: s.name,
-    Distributed: Number(s.distributed),
-    category: s.category,
-  })) || [];
+  const totalStudents = data.departments.reduce((s, d) => s + Number(d.student_count || 0), 0);
+  const totalFreshers = data.departments.reduce((s, d) => s + Number(d.fresher_count || 0), 0);
+  const pendingFreshers = data.departments.reduce(
+    (s, d) => s + Number(d.pending_fresher_count || 0),
+    0
+  );
 
   return (
-    <div>
-      <div className="flex between align-center mb-md">
+    <div className="reports-page">
+      {loadError && (
+        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+          {loadError}{' '}
+          <button className="btn btn-outline btn-xs" onClick={loadAll}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {showUpdating && (
+        <div className="alert alert-info" style={{ marginBottom: 16 }}>
+          <span className="spin-dot" /> Updating…
+        </div>
+      )}
+
+      <div className="page-head">
         <div>
-          <h1>Reports</h1>
+          <h1>{isSchool ? 'Reports' : 'Department Reports'}</h1>
           <p className="subtitle">
             {isSchool
-              ? 'Detailed breakdowns of dues collection across the School.'
-              : `Detailed breakdowns for ${user.department_name}.`}
+              ? 'Collection overview across all departments.'
+              : `Collection overview for ${user?.department_name}.`}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={downloadCsv}><DownloadSimple size={18} /> Export CSV</button>
+        <button className="btn btn-primary" onClick={downloadCsv}>
+          <DownloadSimple size={18} /> Export CSV
+        </button>
       </div>
 
-      {/* ─── Date Range Filter ─── */}
-      <div className="card">
-        <div className="flex align-center gap-md" style={{ flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--gray-600)', fontWeight: 600, fontSize: 14 }}>
-            <CalendarX size={18} />
-            Date Range:
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="flex gap align-center" style={{ flexWrap: 'wrap' }}>
+          <Funnel size={16} style={{ color: 'var(--gold)' }} />
+          <div className="field" style={{ marginBottom: 0, width: 180 }}>
+            <Select
+              value={academicYear}
+              onChange={setAcademicYear}
+              options={[{ value: '', label: 'All academic years' }, ...academicYearOptions]}
+              placeholder="All years"
+            />
           </div>
-          <div className="flex align-center gap-sm">
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: 12, marginBottom: 2 }}>From</label>
-              <input
-                type="date"
-                className="input"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                style={{ width: 170, padding: '8px 12px', fontSize: 14 }}
-              />
-            </div>
-            <span style={{ marginTop: 18, color: 'var(--gray-400)', fontWeight: 600 }}>—</span>
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: 12, marginBottom: 2 }}>To</label>
-              <input
-                type="date"
-                className="input"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                style={{ width: 170, padding: '8px 12px', fontSize: 14 }}
-              />
-            </div>
+          <div className="field" style={{ marginBottom: 0, width: 155 }}>
+            <DatePicker value={from} onChange={setFrom} />
+          </div>
+          <span style={{ color: 'var(--gray-400)', fontWeight: 700, fontSize: 11 }}>to</span>
+          <div className="field" style={{ marginBottom: 0, width: 155 }}>
+            <DatePicker value={to} onChange={setTo} />
           </div>
           {hasDateFilter && (
-            <button className="btn btn-outline btn-sm" onClick={clearDates} style={{ marginTop: 14 }}>
+            <button className="btn btn-ghost btn-sm" onClick={clearDates}>
               <X size={14} /> Clear
             </button>
           )}
-          {hasDateFilter && (
-            <span className="badge badge-navy" style={{ marginTop: 14 }}>
-              Filtered: {from || '...'} → {to || '...'}
-            </span>
-          )}
         </div>
       </div>
 
-      {/* ─── Stat Cards ─── */}
-      <div className="grid grid-3 mb-lg">
-        <StatCard
-          label={isSchool ? 'Total Dept Dues' : 'Department Dues'}
-          value={`GHS ${Number(t.department_dues).toFixed(2)}`}
-          icon={<TrendUp size={22} />}
-          variant="navy"
-        />
-        {isSchool && t.school_dues !== undefined && (
-          <StatCard
-            label="Total School Dues"
-            value={`GHS ${Number(t.school_dues).toFixed(2)}`}
-            icon={<TrendUp size={22} />}
-            variant="gold"
-          />
-        )}
-        <StatCard
-          label="Students Paid"
-          value={t.students_paid}
-          icon={<TrendUp size={22} />}
-          variant="green"
-        />
-      </div>
-
-      {/* ─── Payment Methods (Pie) ─── */}
-      {pieData.length > 0 && (
-        <CollapsibleCard title="Payment Methods" height={320}>
-          <PieChart>
-            <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={4} dataKey="value" animationBegin={0} animationDuration={1000}>
-              {pieData.map((_, i) => (
-                <Cell key={i} fill={METHOD_COLORS[i % METHOD_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomPieTooltip />} />
-            <Legend formatter={(value) => <span style={{ color: '#374151', fontSize: 13 }}>{value}</span>} />
-          </PieChart>
-        </CollapsibleCard>
+      {/* ─── Monthly Summary ─── */}
+      {monthly && monthly.monthly?.length > 0 && (
+        <div className="rc-stats">
+          <div className="rc-stat-card rc-stat-card--navy">
+            <div className="rc-stat-icon"><ChartBar size={20} /></div>
+            <div className="rc-stat-body">
+              <div className="rc-stat-value">
+                GHS {monthly.monthly.reduce((s, m) => s + Number(m.dept_dues || 0), 0).toFixed(2)}
+              </div>
+              <div className="rc-stat-label">Dept Dues</div>
+            </div>
+          </div>
+          <div className="rc-stat-card rc-stat-card--gold">
+            <div className="rc-stat-icon"><ChartBar size={20} /></div>
+            <div className="rc-stat-body">
+              <div className="rc-stat-value">
+                GHS {monthly.monthly.reduce((s, m) => s + Number(m.school_dues || 0), 0).toFixed(2)}
+              </div>
+              <div className="rc-stat-label">School Dues</div>
+            </div>
+          </div>
+          <div className="rc-stat-card rc-stat-card--green">
+            <div className="rc-stat-icon"><TrendUp size={20} /></div>
+            <div className="rc-stat-body">
+              <div className="rc-stat-value">
+                GHS {monthly.monthly.reduce((s, m) => s + Number(m.dept_dues || 0) + Number(m.school_dues || 0), 0).toFixed(2)}
+              </div>
+              <div className="rc-stat-label">Total Collected</div>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* ─── Transactions by Method & Type ─── */}
-      {methodTypeData.length > 0 && (
-        <CollapsibleCard title="Transactions by Method & Type" height={320}>
-          <BarChart data={methodTypeData} barGap={4}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E3DA" />
-            <XAxis dataKey="method" tick={{ fontSize: 13, fill: '#6B7280' }} />
-            <YAxis tick={{ fontSize: 13, fill: '#6B7280' }} allowDecimals={false} />
-            <Tooltip content={<CustomBarTooltip />} />
-            <Legend formatter={(value) => <span style={{ color: '#374151', fontSize: 13 }}>{value}</span>} />
-            <Bar dataKey="School Dues" fill="#8B7D35" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Dept Dues" fill="#1A2868" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </CollapsibleCard>
-      )}
-
-      {/* ─── Clearance Rates ─── */}
-      {clearanceData.length > 0 && (
-        <CollapsibleCard title={isSchool ? 'Clearance Rates by Department' : 'Your Department Clearance'} height={Math.max(280, clearanceData.length * 50 + 60)}>
-          <BarChart data={clearanceData} layout="vertical" barGap={2}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E3DA" horizontal={false} />
-            <XAxis type="number" tick={{ fontSize: 13, fill: '#6B7280' }} allowDecimals={false} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 13, fill: '#6B7280' }} width={120} />
-            <Tooltip content={<CustomBarTooltip />} />
-            <Legend formatter={(value) => <span style={{ color: '#374151', fontSize: 13 }}>{value}</span>} />
-            <Bar dataKey="School Dues Paid" fill="#8B7D35" radius={[0, 4, 4, 0]} />
-            <Bar dataKey="Dept Dues Paid" fill="#1A2868" radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </CollapsibleCard>
-      )}
-
-      {/* ─── Souvenir Distribution ─── */}
-      {souvenirData.length > 0 && (
-        <CollapsibleCard title="Souvenir Distribution" height={320}>
-          <BarChart data={souvenirData} barSize={28}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E3DA" />
-            <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#6B7280' }} angle={-20} textAnchor="end" height={60} />
-            <YAxis tick={{ fontSize: 13, fill: '#6B7280' }} allowDecimals={false} />
-            <Tooltip content={<CustomBarTooltip />} />
-            <Bar dataKey="Distributed" fill="#16a34a" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </CollapsibleCard>
-      )}
-
-      {/* ─── Monthly Trend ─── */}
-      {monthly?.monthly?.length > 0 && (
-        <CollapsibleCard title="Monthly Collection Trend" height={300}>
-          <BarChart data={monthly.monthly}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#E5E3DA" />
-            <XAxis dataKey="label" tick={{ fontSize: 13, fill: '#6B7280' }} />
-            <YAxis tick={{ fontSize: 13, fill: '#6B7280' }} />
-            <Tooltip content={<CustomBarTooltip />} />
-            <Legend formatter={(value) => <span style={{ color: '#374151', fontSize: 13 }}>{value}</span>} />
-            {!monthly.is_dept && <Bar dataKey="school_dues" name="School Dues" fill="#8B7D35" radius={[4, 4, 0, 0]} />}
-            <Bar dataKey="dept_dues" name="Dept Dues" fill="#1A2868" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </CollapsibleCard>
-      )}
-
-      {/* ─── Department Breakdown Table ─── */}
-      <CollapsibleCard title={isSchool ? 'Department Dues Collection' : "Your Department's Dues Collection"}>
+      {/* ─── Department Breakdown ─── */}
+      <div className="card">
+        <div className="card-header">
+          <h3>
+            <Buildings size={16} style={{ marginRight: 6, color: 'var(--gold)' }} />
+            {isSchool ? 'Dues by Department' : 'Department Detail'}
+          </h3>
+        </div>
         <div className="table-wrap">
           <table className="table">
             <thead>
@@ -311,66 +254,135 @@ export default function Reports() {
                 <th>Department</th>
                 <th>Per-Student Dues</th>
                 <th>Students</th>
-                <th>Collected</th>
-                <th>Collection %</th>
+                <th>Freshers (pending / admitted)</th>
+                <th>Dept Dues Collected</th>
+                <th>School Dues Via Dept</th>
               </tr>
             </thead>
             <tbody>
-              {data.departments.map((d) => {
-                const expected = Number(d.dues_amount) * Number(d.student_count);
-                const pct = expected > 0 ? ((Number(d.amount_collected) / expected) * 100).toFixed(1) : '0.0';
-                return (
-                  <tr key={d.id}>
-                    <td className="fw-600">{d.name}</td>
-                    <td>GHS {Number(d.dues_amount).toFixed(2)}</td>
-                    <td>{d.student_count}</td>
-                    <td>GHS {Number(d.amount_collected).toFixed(2)}</td>
-                    <td>
-                      <span className="flex align-center gap-sm">
-                        <span style={{ width: 60, height: 8, background: 'var(--gray-100)', borderRadius: 4, overflow: 'hidden', display: 'inline-block' }}>
-                          <span style={{ display: 'block', height: '100%', width: `${Math.min(pct, 100)}%`, background: Number(pct) >= 50 ? 'var(--green)' : 'var(--gold)', borderRadius: 4 }} />
-                        </span>
-                        <span className="text-sm fw-600" style={{ color: Number(pct) >= 50 ? 'var(--green)' : 'var(--gold)' }}>{pct}%</span>
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {deptPager.slice.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">No departments yet.</td>
+                </tr>
+              )}
+              {deptPager.slice.map((d) => (
+                <tr key={d.id}>
+                  <td className="fw-600">{d.name}</td>
+                  <td>GHS {Number(d.dues_amount).toFixed(2)}</td>
+                  <td>{d.student_count}</td>
+                  <td>
+                    {d.fresher_count} ({d.pending_fresher_count} pending / {d.admitted_fresher_count} admitted)
+                  </td>
+                  <td className="fw-600">
+                    GHS {Number(d.department_dues_collected || 0).toFixed(2)}
+                  </td>
+                  <td>GHS {Number(d.school_dues_through_dept || 0).toFixed(2)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-      </CollapsibleCard>
+        <Pagination
+          page={deptPager.page}
+          totalPages={deptPager.totalPages}
+          onPageChange={deptPager.setPage}
+          totalItems={deptPager.totalItems}
+          pageSize={deptPager.perPage}
+        />
+      </div>
 
-      {/* ─── Class Breakdown Table ─── */}
-      <CollapsibleCard title={isSchool ? 'Class Collection Breakdown' : "Your Department's Class Breakdown"}>
+      {/* ─── Class Breakdown ─── */}
+      <div className="card">
+        <div className="card-header flex align-center justify-between" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <h3>
+            <Student size={16} style={{ marginRight: 6, color: 'var(--gold)' }} />
+            Class / Level Breakdown
+          </h3>
+          {data?.departments?.length > 0 && (
+            <div className="flex align-center gap-sm" style={{ width: 220 }}>
+              <Funnel size={14} style={{ color: 'var(--text-muted)' }} />
+              <div style={{ flex: 1 }}>
+                <Select
+                  value={selectedDeptId}
+                  onChange={(val) => {
+                    setSelectedDeptId(val);
+                    classPager.setPage(1);
+                  }}
+                  options={[
+                    { value: '', label: 'All departments' },
+                    ...(data?.departments || []).map((d) => ({
+                      value: String(d.id),
+                      label: d.name,
+                    })),
+                  ]}
+                  placeholder="All departments"
+                />
+              </div>
+            </div>
+          )}
+        </div>
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Class</th>
+                <th>Class / Level</th>
                 <th>Department</th>
-                <th>Collected</th>
-                <th>Students Paid</th>
-                <th>Total Students</th>
+                <th>Students</th>
+                <th>Paid Dept Dues</th>
+                <th>Dept Dues Collected</th>
                 <th>Payment %</th>
               </tr>
             </thead>
             <tbody>
-              {data.classes.map((c) => {
-                const pct = c.student_count > 0 ? ((c.paid_count / c.student_count) * 100).toFixed(1) : '0.0';
+              {classPager.slice.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    {selectedDeptId
+                      ? 'No classes found for the selected department.'
+                      : 'No classes yet.'}
+                  </td>
+                </tr>
+              )}
+              {classPager.slice.map((c) => {
+                const pct =
+                  c.student_count > 0
+                    ? (Number(c.paid_students) / Number(c.student_count)) * 100
+                    : 0;
                 return (
                   <tr key={c.id}>
                     <td className="fw-600">{c.name}</td>
                     <td>{c.department_name}</td>
-                    <td>GHS {Number(c.collected).toFixed(2)}</td>
-                    <td>{c.paid_count}</td>
                     <td>{c.student_count}</td>
+                    <td>{c.paid_students}</td>
+                    <td>GHS {Number(c.dept_dues_collected || 0).toFixed(2)}</td>
                     <td>
                       <span className="flex align-center gap-sm">
-                        <span style={{ width: 60, height: 8, background: 'var(--gray-100)', borderRadius: 4, overflow: 'hidden', display: 'inline-block' }}>
-                          <span style={{ display: 'block', height: '100%', width: `${Math.min(pct, 100)}%`, background: Number(pct) >= 50 ? 'var(--green)' : 'var(--gold)', borderRadius: 4 }} />
+                        <span
+                          style={{
+                            width: 60,
+                            height: 8,
+                            background: 'var(--gray-100)',
+                            borderRadius: 4,
+                            overflow: 'hidden',
+                            display: 'inline-block',
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: 'block',
+                              height: '100%',
+                              width: `${Math.min(pct, 100)}%`,
+                              background: pct >= 50 ? 'var(--green)' : 'var(--gold)',
+                              borderRadius: 4,
+                            }}
+                          />
                         </span>
-                        <span className="text-sm fw-600" style={{ color: Number(pct) >= 50 ? 'var(--green)' : 'var(--gold)' }}>{pct}%</span>
+                        <span
+                          className="text-sm fw-600"
+                          style={{ color: pct >= 50 ? 'var(--green)' : 'var(--gold)' }}
+                        >
+                          {pct.toFixed(1)}%
+                        </span>
                       </span>
                     </td>
                   </tr>
@@ -379,7 +391,14 @@ export default function Reports() {
             </tbody>
           </table>
         </div>
-      </CollapsibleCard>
+        <Pagination
+          page={classPager.page}
+          totalPages={classPager.totalPages}
+          onPageChange={classPager.setPage}
+          totalItems={classPager.totalItems}
+          pageSize={classPager.perPage}
+        />
+      </div>
     </div>
   );
 }

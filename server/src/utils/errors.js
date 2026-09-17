@@ -14,7 +14,11 @@ function errorHandler(err, req, res, next) {
   if (process.env.NODE_ENV !== 'test') {
     console.error(err);
   }
-  res.status(statusCode).json({ error: err.message || 'Internal server error' });
+  // Never leak internal error details; for expected errors (with a statusCode
+  // and message from AppError) pass the message through.
+  const isAppError = !!err.statusCode;
+  const message = isAppError ? err.message : 'Internal server error';
+  res.status(statusCode).json({ error: message });
 }
 
 module.exports = { AppError, notFound, errorHandler };

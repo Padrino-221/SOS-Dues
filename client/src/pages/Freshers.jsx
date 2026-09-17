@@ -1,20 +1,34 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useRealtime } from '../realtime';
 import {
-  UserPlus, Plus, X, Users, CheckCircle, Warning,
-  Pencil, Trash, CurrencyCircleDollar, Gift,
+  UserPlus,
+  Plus,
+  Users,
+  CheckCircle,
+  Warning,
+  UserCheck,
+  Pencil,
+  Trash,
+  CurrencyCircleDollar,
+  Gift,
+  Student,
+  LinkSimple,
+  Copy,
 } from '@phosphor-icons/react';
 import Select from '../components/ui/Select';
 import Checkbox from '../components/ui/Checkbox';
 import DatePicker from '../components/ui/DatePicker';
 import Confirm from '../components/ui/Confirm';
-import ClearanceBadge from '../components/ui/ClearanceBadge';
+import Modal from '../components/ui/Modal';
 import Pagination from '../components/ui/Pagination';
+import usePagination from '../components/ui/usePagination';
+import StudentDetailsModal from '../components/ui/StudentDetailsModal';
 
 function Toast({ message, type, onClose }) {
   useEffect(() => {
-    const t = setTimeout(onClose, 3000);
+    const t = setTimeout(onClose, 4000);
     return () => clearTimeout(t);
   }, [onClose]);
   return (
@@ -25,40 +39,101 @@ function Toast({ message, type, onClose }) {
   );
 }
 
-const emptyStudent = { first_name: '', middle_name: '', last_name: '', student_no: '', admission_year: new Date().getFullYear() };
-const emptyPayment = { amount: '', method: 'cash', paid_at: new Date().toISOString().slice(0, 10) };
+const METHOD_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'momo', label: 'Mobile Money' },
+];
+
+const GENDER_OPTIONS = [
+  { value: 'Female', label: 'Female' },
+  { value: 'Male', label: 'Male' },
+  { value: 'Other', label: 'Other' },
+];
 
 export default function Freshers() {
   const { user } = useAuth();
-  const isSchool = user?.role === 'school_admin';
+  const schoolSide = ['school_admin', 'school_staff'].includes(user?.role);
+  const isSchoolAdmin = user?.role === 'school_admin';
 
   const [freshers, setFreshers] = useState([]);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [depts, setDepts] = useState([]);
   const [classes, setClasses] = useState([]);
   const [souvenirs, setSouvenirs] = useState([]);
+  const [schoolDues, setSchoolDues] = useState(''); // school-wide amount
+  const [deptDues, setDeptDues] = useState(''); // own dept amount (dept admin)
   const [toasts, setToasts] = useState([]);
-
-  // Register modal state (School Admin only)
-  const [showRegister, setShowRegister] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [studentForm, setStudentForm] = useState(emptyStudent);
-  const [schoolPayment, setSchoolPayment] = useState(emptyPayment);
-  const [schoolSouvenirs, setSchoolSouvenirs] = useState([]);
-  const [existingPaymentId, setExistingPaymentId] = useState(null);
-
-  // Adopt modal state (Dept Admin / School Admin assigning)
-  const [selected, setSelected] = useState(null);
-  const [deptId, setDeptId] = useState('');
-  const [classId, setClassId] = useState('');
-  const [deptPayment, setDeptPayment] = useState(emptyPayment);
-  const [deptSouvenirs, setDeptSouvenirs] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState(schoolSide ? 'registered' : 'pending'); // school: registered | prereg · dept: pending | admitted
+  const [applications, setApplications] = useState([]);
+  const [accessCode, setAccessCode] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
-  // Confirm dialog state
-  const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null, danger: false });
+  // Details modal (row click)
+  const [details, setDetails] = useState(null);
+
+  // Verify pre-registration modal (School Admin)
+  const [verifying, setVerifying] = useState(null);
+  const [verifyForm, setVerifyForm] = useState({
+    name: '',
+    student_no: '',
+    phone: '',
+    email: '',
+    programme: '',
+    gender: '',
+    hometown: '',
+    department_id: '',
+    admission_year: new Date().getFullYear(),
+  });
+  const [verifyPay, setVerifyPay] = useState({
+    amount: '',
+    method: 'cash',
+    paid_at: new Date().toISOString().slice(0, 10),
+  });
+  const [verifySouv, setVerifySouv] = useState([]);
+
+  // Register modal (School Admin)
+  const [showRegister, setShowRegister] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [studentForm, setStudentForm] = useState({
+    name: '',
+    student_no: '',
+    phone: '',
+    email: '',
+    programme: '',
+    gender: '',
+    hometown: '',
+    department_id: '',
+    admission_year: new Date().getFullYear(),
+  });
+  const [schoolPayment, setSchoolPayment] = useState({
+    amount: '',
+    method: 'cash',
+    paid_at: new Date().toISOString().slice(0, 10),
+  });
+  const [schoolSouvenirs, setSchoolSouvenirs] = useState([]);
+
+  // Admit modal (Dept Admin)
+  const [admitting, setAdmitting] = useState(null);
+  const [admitForm, setAdmitForm] = useState({
+    class_id: '',
+    amount: '',
+    method: 'cash',
+    paid_at: new Date().toISOString().slice(0, 10),
+  });
+  const [deptSouvenirs, setDeptSouvenirs] = useState([]);
+  const [givenSouvenirIds, setGivenSouvenirIds] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  // Confirm delete
+  const [confirm, setConfirm] = useState({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: null,
+    danger: false,
+  });
 
   const addToast = useCallback((message, type = 'success') => {
     const id = Date.now();
@@ -68,169 +143,224 @@ export default function Freshers() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const loadFreshers = () => {
-    const endpoint = isSchool ? '/students' : '/students/freshers/pending';
-    api.get(endpoint, { params: search ? { search } : {} })
+  const loadFreshers = useCallback(() => {
+    setLoadError('');
+    const params = {};
+    if (search) params.search = search;
+    if (schoolSide) params.is_fresher = 'true';
+    else if (tab === 'admitted') params.status = 'admitted';
+    else params.status = 'pending';
+    api
+      .get('/students', { params })
       .then((res) => {
-        setFreshers(isSchool ? res.data.filter((s) => s.is_fresher) : res.data);
+        // Dept admin: pending queue is all freshers still waiting.
+        // School admin: only freshers (list already filtered server-side).
+        setFreshers(res.data);
       })
-      .catch(() => {});
-  };
-
-  useEffect(() => { setPage(1); }, [search]);
-  useEffect(loadFreshers, [search, isSchool]);
+      .catch(() => setLoadError('Fresher records could not be loaded.'));
+  }, [search, schoolSide, tab]);
 
   useEffect(() => {
-    if (isSchool) api.get('/departments').then((res) => setDepts(res.data)).catch(() => {});
-    api.get('/classes').then((res) => setClasses(res.data)).catch(() => {});
-    api.get('/souvenirs').then((res) => setSouvenirs(res.data)).catch(() => {});
-  }, []);
+    setPage(1);
+  }, [search, tab]);
 
+  // School: keep registered freshers AND pre-registration submissions fresh.
+  // Dept: just the admit queue.
+  const loadApps = useCallback(() => {
+    api
+      .get('/freshers', { params: { status: 'pending', search: search || undefined } })
+      .then((res) => setApplications(res.data))
+      .catch(() => setLoadError('Pre-registration records could not be loaded.'));
+  }, [search]);
+
+  useEffect(() => {
+    loadFreshers();
+    if (schoolSide) loadApps();
+  }, [loadFreshers, loadApps, schoolSide]);
+
+  // Live updates (server scopes each event to the right admin):
+  //  - a fresher's at-home submission lands instantly on the school's list
+  //  - registers/verifies/admits/payments refresh the queues & badges in place
+  useRealtime({
+    'fresher_application:new': () => {
+      if (schoolSide) loadApps();
+    },
+    'fresher_application:removed': () => {
+      if (schoolSide) loadApps();
+    },
+    'fresher:registered': loadFreshers,
+    'fresher:verified': () => {
+      loadFreshers();
+      if (schoolSide) loadApps();
+    },
+    'fresher:admitted': loadFreshers,
+    'payment:new': loadFreshers,
+    'student:changed': loadFreshers,
+  });
+
+  useEffect(() => {
+    // Reference data
+    api
+      .get('/settings')
+      .then((res) => {
+        setSchoolDues(res.data?.school_dues_amount || '');
+        setAccessCode(res.data?.fresher_access_code || '');
+      })
+      .catch(() => {});
+    api
+      .get('/souvenirs')
+      .then((res) => setSouvenirs(res.data))
+      .catch(() => {});
+
+    if (schoolSide) {
+      api
+        .get('/departments')
+        .then((res) => setDepts(res.data))
+        .catch(() => {});
+    } else {
+      api
+        .get('/departments')
+        .then((res) => setDeptDues(String(res.data?.[0]?.dues_amount || '')))
+        .catch(() => {});
+    }
+    api
+      .get('/classes')
+      .then((res) => setClasses(res.data))
+      .catch(() => {});
+  }, [schoolSide]);
+
+  // School souvenirs only have category 'school'; the souvenirs the dept
+  // hands out at admission are the 'department' category items.
   const schoolSouvenirList = souvenirs.filter((s) => s.category === 'school');
   const deptSouvenirList = souvenirs.filter((s) => s.category === 'department');
 
-  const methodOptions = [
-    { value: 'cash', label: 'Cash' },
-    { value: 'momo', label: 'Mobile Money' },
-    { value: 'bank', label: 'Bank Transfer' },
-  ];
-
-  const deptOptions = depts.map((d) => ({ value: d.id, label: d.name }));
-  const classOptions = classes
-    .filter((c) => c.department_id === Number(deptId || user?.department_id))
-    .map((c) => ({ value: c.id, label: `${c.name} (${c.level})` }));
-
-  // ─── Register / Edit Fresher (School Admin only) ───
+  // ─── School Admin: register / edit fresher ───
   const openCreate = () => {
     setEditing(null);
-    setStudentForm(emptyStudent);
-    setSchoolPayment(emptyPayment);
+    setStudentForm({
+      name: '',
+      student_no: '',
+      phone: '',
+      email: '',
+      programme: '',
+      gender: '',
+      hometown: '',
+      department_id: '',
+      admission_year: new Date().getFullYear(),
+    });
+    setSchoolPayment({
+      amount: schoolDues || '',
+      method: 'cash',
+      paid_at: new Date().toISOString().slice(0, 10),
+    });
     setSchoolSouvenirs([]);
+    setGivenSouvenirIds([]);
     setShowRegister(true);
   };
 
   const openEdit = (f) => {
     setEditing(f);
-    const parts = (f.name || '').split(' ');
     setStudentForm({
-      first_name: parts[0] || '',
-      middle_name: parts.length > 2 ? parts.slice(1, -1).join(' ') : '',
-      last_name: parts.length > 1 ? parts[parts.length - 1] : '',
+      name: f.name || '',
       student_no: f.student_no || '',
-      admission_year: f.admission_year || '',
+      phone: f.phone || '',
+      email: f.email || '',
+      programme: f.programme || '',
+      gender: f.gender || '',
+      hometown: f.hometown || '',
+      department_id: String(f.department_id || ''),
+      admission_year: f.admission_year || new Date().getFullYear(),
     });
-    setSchoolPayment(emptyPayment);
     setSchoolSouvenirs([]);
-    setExistingPaymentId(null);
+    setGivenSouvenirIds([]);
+    api
+      .get(`/students/${f.id}/souvenirs`)
+      .then((res) => {
+        const ids = res.data.map((r) => r.souvenir_id);
+        setGivenSouvenirIds(ids);
+        setSchoolSouvenirs(ids);
+      })
+      .catch(() => {});
     setShowRegister(true);
-
-    // Load existing school payment and souvenirs
-    Promise.all([
-      api.get(`/payments`, { params: { type: 'school_dues', student_id: f.id } }).catch(() => ({ data: [] })),
-      api.get(`/students/${f.id}/souvenirs`).catch(() => ({ data: [] })),
-    ]).then(([paymentsRes, souvenirsRes]) => {
-      const existing = paymentsRes.data.find((p) => p.student_id === f.id);
-      if (existing) {
-        setExistingPaymentId(existing.id);
-        setSchoolPayment({
-          amount: String(existing.amount),
-          method: existing.method,
-          paid_at: existing.paid_at ? existing.paid_at.slice(0, 10) : '',
-        });
-      }
-      const schoolIds = souvenirsRes.data.filter((s) => s.level === 'school').map((s) => s.souvenir_id);
-      setSchoolSouvenirs(schoolIds);
-    }).catch(() => {});
   };
 
-  const buildName = () => {
-    const { first_name, middle_name, last_name } = studentForm;
-    return [first_name, middle_name, last_name].filter(Boolean).join(' ');
+  const buildPayload = (isFresher, departmentId) => {
+    const payload = {
+      name: studentForm.name.trim(),
+      student_no: studentForm.student_no.trim() || null,
+      phone: studentForm.phone.trim() || null,
+      email: studentForm.email.trim() || null,
+      programme: studentForm.programme.trim() || null,
+      gender: studentForm.gender || null,
+      hometown: studentForm.hometown.trim() || null,
+      admission_year: studentForm.admission_year ? String(studentForm.admission_year) : null,
+    };
+    if (isFresher) payload.department_id = departmentId || null;
+    return payload;
   };
 
-  const saveFresher = async (e) => {
+  const registerFresher = async (e) => {
     e.preventDefault();
-    const fullName = buildName();
-
-    if (!editing) {
-      if (!schoolPayment.amount || Number(schoolPayment.amount) <= 0) {
-        addToast('School dues amount is required.', 'error');
-        return;
-      }
-      if (!schoolPayment.paid_at) {
-        addToast('School dues date is required.', 'error');
-        return;
-      }
-      if (isSchool && schoolSouvenirList.length > 0 && schoolSouvenirs.length === 0) {
-        addToast('Please select at least one school souvenir.', 'error');
-        return;
-      }
-    }
-
+    setSaving(true);
     try {
-      let studentId;
-      if (editing) {
-        await api.put(`/students/${editing.id}`, {
-          name: fullName,
-          student_no: studentForm.student_no || null,
-          admission_year: studentForm.admission_year || null,
-          is_fresher: true,
-          department_id: editing.department_id || null,
-          class_id: editing.class_id || null,
-        });
-        studentId = editing.id;
-
-        if (schoolPayment.amount && Number(schoolPayment.amount) > 0 && schoolPayment.paid_at) {
-          if (existingPaymentId) {
-            await api.put(`/payments/${existingPaymentId}`, {
-              amount: Number(schoolPayment.amount),
-              method: schoolPayment.method,
-              paid_at: schoolPayment.paid_at,
-            });
-          } else {
-            await api.post(`/payments/students/${studentId}/pay`, {
-              type: 'school_dues',
-              amount: Number(schoolPayment.amount),
-              method: schoolPayment.method,
-              paid_at: schoolPayment.paid_at,
-              souvenir_ids: schoolSouvenirs.length > 0 ? schoolSouvenirs : undefined,
-            });
-          }
-          addToast('Fresher updated and school dues recorded.');
-        } else {
-          addToast('Fresher updated.');
-        }
-      } else {
-        const res = await api.post('/students', {
-          name: fullName,
-          student_no: studentForm.student_no || null,
-          is_fresher: true,
-          admission_year: studentForm.admission_year || null,
-        });
-        studentId = res.data.id;
-
-        await api.post(`/payments/students/${studentId}/pay`, {
-          type: 'school_dues',
-          amount: Number(schoolPayment.amount),
-          method: schoolPayment.method,
-          paid_at: schoolPayment.paid_at || undefined,
-          souvenir_ids: schoolSouvenirs.length > 0 ? schoolSouvenirs : undefined,
-        });
-        addToast('Fresher registered and school dues recorded.');
+      if (!studentForm.department_id) {
+        addToast('Assign the fresher to a department.', 'error');
+        setSaving(false);
+        return;
       }
+      if (schoolSouvenirs.length > 0 && Number(schoolPayment.amount) <= 0) {
+        addToast('A School Dues amount is required to record souvenirs.', 'error');
+        setSaving(false);
+        return;
+      }
+      const res = await api.post('/students/freshers', {
+        ...buildPayload(true, studentForm.department_id),
+        payment: Number(schoolPayment.amount) > 0 ? schoolPayment : undefined,
+        souvenir_ids: schoolSouvenirs.length > 0 ? schoolSouvenirs : undefined,
+      });
+      const student = res.data;
+
+      addToast(`${student.name} registered and assigned to a department.`);
       setShowRegister(false);
       loadFreshers();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Operation failed', 'error');
+      addToast(err.response?.data?.error || 'Failed to register fresher', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
-  // ─── Delete Fresher (School Admin only) ───
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.put(`/students/${editing.id}`, buildPayload(true, studentForm.department_id));
+      // Record any remaining school souvenirs the fresher collects later. The
+      // server ignores items already handed out and issues a $0 receipt for the
+      // newly given ones.
+      const newlyGiven = schoolSouvenirs.filter((id) => !givenSouvenirIds.includes(id));
+      let added = 0;
+      if (newlyGiven.length) {
+        const res = await api.post(`/students/${editing.id}/souvenirs`, {
+          souvenir_ids: newlyGiven,
+        });
+        added = res.data?.added || 0;
+      }
+      addToast(added > 0 ? `Fresher updated — ${added} souvenir(s) recorded.` : 'Fresher updated.');
+      setShowRegister(false);
+      loadFreshers();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed to update fresher', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteFresher = (f) => {
     setConfirm({
       open: true,
       title: 'Delete Fresher',
-      message: `Are you sure you want to delete ${f.name}? This action cannot be undone.`,
+      message: `Delete ${f.name}? This permanently removes their record and receipts.`,
       danger: true,
       onConfirm: async () => {
         try {
@@ -245,74 +375,187 @@ export default function Freshers() {
     });
   };
 
-  // ─── Adopt Fresher (Dept Admin or School Admin) ───
-  const openAdopt = (f) => {
-    setSelected(f);
-    const autoDeptId = isSchool ? '' : String(user.department_id || '');
-    setDeptId(autoDeptId);
-    setClassId('');
-    const dept = depts.find((d) => d.id === Number(autoDeptId));
-    setDeptPayment({ ...emptyPayment, amount: String(dept?.dues_amount || '') });
+  // ─── Dept Admin: admit ───
+  const openAdmit = (f) => {
+    setAdmitting(f);
+    setAdmitForm({
+      class_id: f.class_id ? String(f.class_id) : '',
+      amount: deptDues || '',
+      method: 'cash',
+      paid_at: new Date().toISOString().slice(0, 10),
+    });
     setDeptSouvenirs([]);
+    setGivenSouvenirIds([]);
+    api
+      .get(`/students/${f.id}/souvenirs`)
+      .then((res) => {
+        const ids = res.data.filter((r) => r.level === 'department').map((r) => r.souvenir_id);
+        setGivenSouvenirIds(ids);
+        setDeptSouvenirs(ids);
+      })
+      .catch(() => {});
   };
 
-  const handleDeptChange = (id) => {
-    setDeptId(id);
-    setClassId('');
-    const dept = depts.find((d) => d.id === Number(id));
-    if (dept) setDeptPayment((p) => ({ ...p, amount: String(dept.dues_amount || '') }));
-  };
-
-  const adopt = async () => {
-    setLoading(true);
+  const admit = async () => {
+    setSaving(true);
     try {
-      if (!deptPayment.amount || Number(deptPayment.amount) <= 0) {
-        addToast('Department dues amount is required.', 'error');
-        setLoading(false);
+      if (!admitForm.class_id) {
+        addToast("Pick the fresher's class/level.", 'error');
+        setSaving(false);
         return;
       }
-      if (!deptPayment.paid_at) {
-        addToast('Department dues date is required.', 'error');
-        setLoading(false);
-        return;
+      const body = { class_id: Number(admitForm.class_id) };
+      if (Number(admitForm.amount) > 0) {
+        body.payment = {
+          amount: Number(admitForm.amount),
+          method: admitForm.method,
+          paid_at: admitForm.paid_at || undefined,
+        };
       }
-
-      await api.post('/students/freshers/pending/adopt', {
-        student_id: selected.id,
-        department_id: deptId,
-        class_id: classId || undefined,
-      });
-
-      await api.post(`/payments/students/${selected.id}/pay`, {
-        type: 'department_dues',
-        amount: Number(deptPayment.amount),
-        method: deptPayment.method,
-        paid_at: deptPayment.paid_at || undefined,
-      });
-
       if (deptSouvenirs.length > 0) {
-        await api.post(`/payments/students/${selected.id}/souvenirs/department`, {
-          souvenir_ids: deptSouvenirs,
-        });
+        const newly = deptSouvenirs.filter((id) => !givenSouvenirIds.includes(id));
+        if (newly.length) body.souvenir_ids = newly;
       }
 
-      addToast(`${selected.name} assigned to department.`);
-      setSelected(null);
+      const res = await api.post(`/students/${admitting.id}/admit`, body);
+      addToast(
+        `${admitting.name} admitted.${res.data.receipt_number ? ` Receipt ${res.data.receipt_number}.` : ''}`
+      );
+      setAdmitting(null);
       loadFreshers();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Failed to assign fresher', 'error');
+      addToast(err.response?.data?.error || 'Failed to admit fresher', 'error');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const getStatus = (f) => {
-    if (f.department_name) return { label: 'Adopted', cls: 'badge-green' };
+  // ─── School Admin: pre-registrations (freshers still at home) ───
+  const appPager = usePagination(applications, 10);
+
+  const preregLink = () => `${window.location.origin}/apply`;
+
+  const copyText = async (text, what) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      addToast(`${what} copied to clipboard.`);
+    } catch {
+      addToast('Could not copy automatically — copy manually.', 'error');
+    }
+  };
+
+  const openVerify = (a) => {
+    setVerifying(a);
+    setVerifyForm({
+      name: a.full_name || '',
+      student_no: a.student_no || '',
+      phone: a.phone || '',
+      email: a.email || '',
+      programme: a.programme || '',
+      gender: a.gender || '',
+      hometown: a.hometown || '',
+      department_id: '',
+      admission_year: a.admission_year || new Date().getFullYear(),
+    });
+    setVerifyPay({
+      amount: schoolDues || '',
+      method: 'cash',
+      paid_at: new Date().toISOString().slice(0, 10),
+    });
+    setVerifySouv([]);
+  };
+
+  const verifyApp = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (!verifyForm.department_id) {
+        addToast('Assign the fresher to a department.', 'error');
+        setSaving(false);
+        return;
+      }
+      const body = {
+        full_name: verifyForm.name.trim(),
+        student_no: verifyForm.student_no.trim(),
+        phone: verifyForm.phone.trim() || undefined,
+        email: verifyForm.email.trim() || undefined,
+        programme: verifyForm.programme.trim() || undefined,
+        gender: verifyForm.gender || undefined,
+        hometown: verifyForm.hometown.trim() || undefined,
+        department_id: Number(verifyForm.department_id),
+        admission_year: verifyForm.admission_year ? String(verifyForm.admission_year) : undefined,
+      };
+      if (Number(verifyPay.amount) > 0) {
+        body.payment = {
+          amount: Number(verifyPay.amount),
+          method: verifyPay.method,
+          paid_at: verifyPay.paid_at || undefined,
+        };
+      }
+      if (verifySouv.length > 0) body.souvenir_ids = verifySouv;
+
+      const res = await api.post(`/freshers/${verifying.id}/verify`, body);
+      addToast(
+        `${verifyForm.name.trim()} verified and assigned to a department.${res.data.receipt_number ? ` School Dues receipt ${res.data.receipt_number}.` : ''}`
+      );
+      setVerifying(null);
+      loadApps();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Verification failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteApp = (a) => {
+    setConfirm({
+      open: true,
+      title: 'Remove Pre-Registration',
+      message: `Remove ${a.full_name}'s submission? They can fill the form again if needed.`,
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/freshers/${a.id}`);
+          addToast('Pre-registration removed.');
+          loadApps();
+        } catch (err) {
+          addToast(err.response?.data?.error || 'Failed to remove', 'error');
+        }
+        setConfirm({ ...confirm, open: false });
+      },
+    });
+  };
+
+  const myClasses = classes.map((c) => ({
+    value: c.id,
+    label: c.name + (c.level !== c.name ? ` (${c.level})` : ''),
+  }));
+
+  const deptOptions = depts.map((d) => ({ value: d.id, label: d.name }));
+  const statusBadge = (f) => {
+    if (!f.is_fresher) return { label: 'Continuing', cls: 'badge-navy' };
+    if (f.admitted_at) return { label: 'Admitted', cls: 'badge-green' };
     return { label: 'Pending', cls: 'badge-gold' };
   };
 
+  const paged = freshers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   return (
     <div>
+      {loadError && (
+        <div className="alert alert-error">
+          <Warning size={16} /> {loadError}{' '}
+          <button
+            className="btn btn-outline btn-xs"
+            onClick={() => {
+              loadFreshers();
+              if (schoolSide) loadApps();
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="toast-container">
         {toasts.map((t) => (
           <Toast key={t.id} message={t.message} type={t.type} onClose={() => removeToast(t.id)} />
@@ -328,264 +571,533 @@ export default function Freshers() {
         danger={confirm.danger}
       />
 
-      <div className="flex between align-center mb-md">
+      <StudentDetailsModal student={details} onClose={() => setDetails(null)} />
+
+      <div className="page-head">
         <div>
-          <h1><Users size={28} style={{ marginRight: 10, verticalAlign: -5 }} />{isSchool ? 'All Freshers' : 'Pending Freshers'}</h1>
+          <h1>{schoolSide ? 'Freshers' : 'Admit Freshers'}</h1>
           <p className="subtitle">
-            {isSchool
-              ? 'Register freshers, record school dues and school souvenirs. Department admins will assign them.'
-              : 'Assign pending freshers to your department, record department dues and department souvenirs.'}
+            {schoolSide
+              ? tab === 'prereg'
+                ? 'Freshers who pre-registered from home. Verify and assign a department on reporting day.'
+                : 'Registered freshers — assign departments and record School dues & souvenirs.'
+              : `Freshers assigned to ${user?.department_name}. Admit and record Department dues & souvenirs.`}
           </p>
         </div>
-        {isSchool && (
+        {isSchoolAdmin && tab === 'prereg' && (
+          <button
+            className="btn btn-outline"
+            onClick={() => copyText(preregLink(), 'Pre-registration link')}
+          >
+            <LinkSimple size={18} /> Copy Form Link
+          </button>
+        )}
+        {schoolSide && tab === 'registered' && (
           <button className="btn btn-green" onClick={openCreate}>
             <Plus size={18} /> Register Fresher
           </button>
         )}
       </div>
 
-      {/* ─── Register / Edit Modal (School Admin only) ─── */}
-      {showRegister && (
-        <div className="modal-backdrop" onClick={() => setShowRegister(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editing ? 'Edit Fresher' : 'Register a Fresher'}</h3>
-              <button className="modal-close" onClick={() => setShowRegister(false)}><X size={18} /></button>
+      <div className="tabs mb-md">
+        {(schoolSide
+          ? [
+              ['registered', 'Registered Freshers'],
+              [
+                'prereg',
+                `Pre-Registrations${applications.length ? ` (${applications.length})` : ''}`,
+              ],
+            ]
+          : [
+              ['pending', 'Pending Admission'],
+              ['admitted', 'Admitted'],
+            ]
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            className={`tab-btn ${tab === key ? 'active' : ''}`}
+            onClick={() => setTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ─── Register / Edit Fresher modal (School Admin) ─── */}
+      {showRegister && schoolSide && (
+        <Modal
+          open
+          size="wide"
+          icon={<Student size={20} />}
+          title={editing ? 'Edit Fresher' : 'Register a Fresher'}
+          subtitle={
+            editing
+              ? 'Update the fresher record or reassign their department.'
+              : 'Capture their details, assign a department, and record School dues & souvenirs.'
+          }
+          onClose={() => setShowRegister(false)}
+        >
+          <form onSubmit={editing ? saveEdit : registerFresher}>
+            <div className="modal-section">
+              <div className="modal-section-title">
+                <Student size={16} /> Fresher Details
+              </div>
+              <div className="grid grid-2">
+                <div className="field">
+                  <label>Full Name *</label>
+                  <input
+                    className="input"
+                    value={studentForm.name}
+                    onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label>Reference Number</label>
+                  <input
+                    className="input"
+                    value={studentForm.student_no}
+                    onChange={(e) => setStudentForm({ ...studentForm, student_no: e.target.value })}
+                    placeholder="e.g. REF-2026-00123"
+                  />
+                </div>
+                <div className="field">
+                  <label>Phone Number</label>
+                  <input
+                    className="input"
+                    value={studentForm.phone}
+                    onChange={(e) => setStudentForm({ ...studentForm, phone: e.target.value })}
+                    placeholder="e.g. 0244 000 000"
+                  />
+                </div>
+                <div className="field">
+                  <label>Email Address</label>
+                  <input
+                    className="input"
+                    type="email"
+                    value={studentForm.email}
+                    onChange={(e) => setStudentForm({ ...studentForm, email: e.target.value })}
+                    placeholder="name@example.com"
+                  />
+                </div>
+                <div className="field">
+                  <label>Programme of Choice</label>
+                  <input
+                    className="input"
+                    value={studentForm.programme}
+                    onChange={(e) => setStudentForm({ ...studentForm, programme: e.target.value })}
+                    placeholder="e.g. BSc. Computer Science"
+                  />
+                </div>
+                <div className="field">
+                  <label>Gender</label>
+                  <Select
+                    value={studentForm.gender}
+                    onChange={(v) => setStudentForm({ ...studentForm, gender: v })}
+                    options={GENDER_OPTIONS}
+                    placeholder="Select gender..."
+                  />
+                </div>
+                <div className="field">
+                  <label>Hometown / Region</label>
+                  <input
+                    className="input"
+                    value={studentForm.hometown}
+                    onChange={(e) => setStudentForm({ ...studentForm, hometown: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Admission Year</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="2000"
+                    max="2100"
+                    value={studentForm.admission_year}
+                    onChange={(e) =>
+                      setStudentForm({ ...studentForm, admission_year: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Assign to Department *</label>
+                <Select
+                  value={studentForm.department_id}
+                  onChange={(v) => setStudentForm({ ...studentForm, department_id: v })}
+                  options={deptOptions}
+                  placeholder="Select department..."
+                  required
+                />
+              </div>
             </div>
-            <form onSubmit={saveFresher}>
+
+            {!editing && (
               <div className="modal-section">
-                <div className="modal-section-title"><Users size={16} /> Student Details</div>
+                <div className="modal-section-title">
+                  <CurrencyCircleDollar size={16} /> School Dues Payment
+                </div>
+                <p className="muted text-sm mb">Pre-filled from Settings — editable.</p>
                 <div className="grid grid-3">
                   <div className="field">
-                    <label>First Name *</label>
-                    <input className="input" value={studentForm.first_name} onChange={(e) => setStudentForm({ ...studentForm, first_name: e.target.value })} required />
+                    <label>Amount (GHS) *</label>
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={schoolPayment.amount}
+                      onChange={(e) =>
+                        setSchoolPayment({ ...schoolPayment, amount: e.target.value })
+                      }
+                      required
+                    />
                   </div>
                   <div className="field">
-                    <label>Middle Name</label>
-                    <input className="input" value={studentForm.middle_name} onChange={(e) => setStudentForm({ ...studentForm, middle_name: e.target.value })} />
+                    <label>Method *</label>
+                    <Select
+                      value={schoolPayment.method}
+                      onChange={(v) => setSchoolPayment({ ...schoolPayment, method: v })}
+                      options={METHOD_OPTIONS}
+                      required
+                    />
                   </div>
                   <div className="field">
-                    <label>Last Name *</label>
-                    <input className="input" value={studentForm.last_name} onChange={(e) => setStudentForm({ ...studentForm, last_name: e.target.value })} required />
-                  </div>
-                </div>
-                <div className="grid grid-2 mt">
-                  <div className="field">
-                    <label>Student Number *</label>
-                    <input className="input" value={studentForm.student_no} onChange={(e) => setStudentForm({ ...studentForm, student_no: e.target.value })} required />
-                  </div>
-                  <div className="field">
-                    <label>Admission Year *</label>
-                    <input className="input" value={studentForm.admission_year} onChange={(e) => setStudentForm({ ...studentForm, admission_year: e.target.value })} required />
+                    <label>Date</label>
+                    <DatePicker
+                      value={schoolPayment.paid_at}
+                      onChange={(v) => setSchoolPayment({ ...schoolPayment, paid_at: v })}
+                    />
                   </div>
                 </div>
               </div>
+            )}
 
+            {schoolSouvenirList.length > 0 && (
               <div className="modal-section">
-                <div className="modal-section-title"><CurrencyCircleDollar size={16} /> School Dues Payment {editing ? '' : '*'}</div>
-                <div className="grid grid-3">
-                  <div className="field">
-                    <label>Amount (GHS) {editing ? '' : '*'}</label>
-                    <input className="input" type="number" step="0.01" min="0" value={schoolPayment.amount} onChange={(e) => setSchoolPayment({ ...schoolPayment, amount: e.target.value })} required={!editing} />
-                  </div>
-                  <div className="field">
-                    <label>Method {editing ? '' : '*'}</label>
-                    <Select value={schoolPayment.method} onChange={(v) => setSchoolPayment({ ...schoolPayment, method: v })} options={methodOptions} required={!editing} />
-                  </div>
-                  <div className="field">
-                    <label>Date {editing ? '' : '*'}</label>
-                    <DatePicker value={schoolPayment.paid_at} onChange={(v) => setSchoolPayment({ ...schoolPayment, paid_at: v })} required={!editing} />
-                  </div>
+                <div className="modal-section-title">
+                  <Gift size={16} /> School Souvenirs
                 </div>
-              </div>
-
-              {isSchool && schoolSouvenirList.length > 0 && (
-                <div className="modal-section">
-                    <div className="modal-section-title"><Gift size={16} /> School Souvenirs {editing ? '' : '*'}</div>
-                  <div className="grid grid-3">
-                    {schoolSouvenirList.map((s) => (
+                <p className="muted text-sm mb">
+                  {editing
+                    ? 'Items already handed out are marked "recorded". Tick any remaining items the student collects now — a $0 souvenir receipt is issued for them.'
+                    : 'Tick the items handed to the fresher now.'}
+                </p>
+                <div className="grid grid-2">
+                  {schoolSouvenirList.map((s) => {
+                    const given = givenSouvenirIds.includes(s.id);
+                    return (
                       <Checkbox
                         key={s.id}
                         checked={schoolSouvenirs.includes(s.id)}
-                        onChange={() => setSchoolSouvenirs((prev) => prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id])}
-                        label={s.name}
+                        disabled={given}
+                        onChange={() =>
+                          setSchoolSouvenirs((prev) =>
+                            prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]
+                          )
+                        }
+                        label={given ? `${s.name} (recorded)` : s.name}
                       />
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              )}
-
-              <div className="flex gap mt">
-                <button
-                  className="btn btn-green"
-                  disabled={
-                    !studentForm.first_name.trim() ||
-                    !studentForm.last_name.trim() ||
-                    !studentForm.student_no.trim() ||
-                    !studentForm.admission_year ||
-                    (!editing && (
-                      !schoolPayment.amount || Number(schoolPayment.amount) <= 0 ||
-                      !schoolPayment.paid_at ||
-                      (isSchool && schoolSouvenirList.length > 0 && schoolSouvenirs.length === 0)
-                    ))
-                  }
-                >
-                  {editing ? <><CheckCircle size={18} /> Save Changes</> : <><UserPlus size={18} /> Register Fresher</>}
-                </button>
-                <button type="button" className="btn btn-outline" onClick={() => setShowRegister(false)}>Cancel</button>
               </div>
-            </form>
-          </div>
-        </div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setShowRegister(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-green"
+                disabled={saving || !studentForm.name.trim() || !studentForm.department_id}
+              >
+                {editing ? (
+                  <>
+                    <CheckCircle size={18} /> Save Changes
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={18} /> Register & Record School Dues
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
-      {/* ─── Table ─── */}
-      <div className="card">
-        <div className="field" style={{ maxWidth: 400 }}>
-          <input
-            className="input search-input"
-            placeholder="Search by name or student number..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Student No</th>
-                <th>Clearance Status</th>
-                <th>Department</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {freshers.length === 0 && (
-                <tr><td colSpan={5} className="muted">{isSchool ? 'No freshers registered yet. Click "Register Fresher" to add one.' : 'No pending freshers to assign. Freshers appear here after the School Admin registers them.'}</td></tr>
-              )}
-              {freshers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((f) => {
-                const status = getStatus(f);
-                return (
-                  <tr key={f.id}>
-                    <td>{f.name}</td>
-                    <td>{f.student_no || '-'}</td>
-                    <td>
-                      <ClearanceBadge
-                        schoolDuesPaid={f.school_dues_paid}
-                        schoolSouvenirCollected={f.school_souvenir_collected}
-                        deptDuesPaid={f.dept_dues_paid}
-                        deptSouvenirCollected={f.dept_souvenir_collected}
-                        compact
-                      />
-                    </td>
-                    <td>
-                      <span className={`badge ${status.cls}`}>{status.label}</span>
-                      {f.department_name && <span className="muted text-xs" style={{ marginLeft: 6 }}>{f.department_name}</span>}
-                    </td>
-                    <td>
-                      <div className="flex gap-sm">
-                        {!isSchool && !f.department_id && (
-                          <button className="btn btn-sm btn-primary" onClick={() => openAdopt(f)}>
-                            <UserPlus size={14} /> Assign
-                          </button>
-                        )}
-                        {isSchool && (
-                          <>
-                            <button className="btn btn-sm btn-outline" onClick={() => openEdit(f)}>
-                              <Pencil size={14} />
-                            </button>
-                            <button className="btn btn-sm btn-danger" onClick={() => deleteFresher(f)}>
-                              <Trash size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <Pagination
-          page={page}
-          totalPages={Math.ceil(freshers.length / PAGE_SIZE)}
-          onPageChange={setPage}
-          totalItems={freshers.length}
-          pageSize={PAGE_SIZE}
-        />
-      </div>
-
-      {/* ─── Adopt Modal ─── */}
-      {selected && (
-        <div className="modal-backdrop" onClick={() => setSelected(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Assign {selected.name}</h3>
-              <button className="modal-close" onClick={() => setSelected(null)}><X size={18} /></button>
+      {/* ─── Admit modal (Dept Admin) ─── */}
+      {admitting && !schoolSide && (
+        <Modal
+          open
+          icon={<UserPlus size={20} />}
+          title={`Admit ${admitting.name}`}
+          subtitle="Assign their class and record Department dues & souvenirs."
+          onClose={() => setAdmitting(null)}
+        >
+          <div className="modal-section">
+            <div className="modal-section-title">
+              <Users size={16} /> Admission Details
             </div>
-
-            {/* Show inherited school clearance status */}
-            <div className="modal-section" style={{ background: selected.school_dues_paid ? 'var(--green-light)' : 'var(--amber-light)', borderColor: selected.school_dues_paid ? '#BBF7D0' : '#FDE68A' }}>
-              <div className="modal-section-title">
-                {selected.school_dues_paid ? <CheckCircle size={16} color="var(--green)" /> : <Warning size={16} color="var(--amber)" />}
-                School Clearance Status
-              </div>
-              <ClearanceBadge
-                schoolDuesPaid={selected.school_dues_paid}
-                schoolSouvenirCollected={selected.school_souvenir_collected}
-                deptDuesPaid={false}
-                deptSouvenirCollected={false}
-                compact={false}
+            <p className="muted text-sm mb">
+              Registered by the School and assigned to {admitting.department_name}. Pick their class
+              to admit.
+            </p>
+            <div className="field">
+              <label>Class / Level *</label>
+              <Select
+                value={admitForm.class_id}
+                onChange={(v) => setAdmitForm({ ...admitForm, class_id: v })}
+                options={myClasses}
+                placeholder="Select class..."
+                required
               />
             </div>
+          </div>
 
-            <div className="modal-section">
-              <div className="modal-section-title"><Users size={16} /> Department Assignment</div>
-              <div className="grid grid-2">
-                <div className="field">
-                  <label>Department *</label>
-                  {isSchool ? (
-                    <Select value={deptId} onChange={handleDeptChange} options={deptOptions} placeholder="Select department..." required />
-                  ) : (
-                    <input className="input" value={user.department_name} disabled />
-                  )}
-                </div>
-                <div className="field">
-                  <label>Class / Level *</label>
-                  <Select value={classId} onChange={setClassId} options={classOptions} placeholder="Select class..." disabled={!deptId} required />
-                </div>
+          <div className="modal-section">
+            <div className="modal-section-title">
+              <CurrencyCircleDollar size={16} /> Department Dues Payment
+            </div>
+            <p className="muted text-sm mb">Pre-filled and editable.</p>
+            <div className="grid grid-3">
+              <div className="field">
+                <label>Amount (GHS)</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={admitForm.amount}
+                  onChange={(e) => setAdmitForm({ ...admitForm, amount: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Method</label>
+                <Select
+                  value={admitForm.method}
+                  onChange={(v) => setAdmitForm({ ...admitForm, method: v })}
+                  options={METHOD_OPTIONS}
+                />
+              </div>
+              <div className="field">
+                <label>Date</label>
+                <DatePicker
+                  value={admitForm.paid_at}
+                  onChange={(v) => setAdmitForm({ ...admitForm, paid_at: v })}
+                />
               </div>
             </div>
+          </div>
 
+          {deptSouvenirList.length > 0 && (
             <div className="modal-section">
-              <div className="modal-section-title"><CurrencyCircleDollar size={16} /> Department Dues Payment *</div>
+              <div className="modal-section-title">
+                <Gift size={16} /> Department Souvenirs
+              </div>
               <div className="grid grid-3">
-                <div className="field">
-                  <label>Amount (GHS) *</label>
-                  <input className="input" type="number" step="0.01" min="0" value={deptPayment.amount} onChange={(e) => setDeptPayment({ ...deptPayment, amount: e.target.value })} required />
-                </div>
-                <div className="field">
-                  <label>Method *</label>
-                  <Select value={deptPayment.method} onChange={(v) => setDeptPayment({ ...deptPayment, method: v })} options={methodOptions} required />
-                </div>
-                <div className="field">
-                  <label>Date *</label>
-                  <DatePicker value={deptPayment.paid_at} onChange={(v) => setDeptPayment({ ...deptPayment, paid_at: v })} required />
-                </div>
-              </div>
-            </div>
-
-            {deptSouvenirList.length > 0 && (
-              <div className="modal-section">
-                <div className="modal-section-title"><Gift size={16} /> Department Souvenirs *</div>
-                <div className="grid grid-3">
-                  {deptSouvenirList.map((s) => (
+                {deptSouvenirList.map((s) => {
+                  const given = givenSouvenirIds.includes(s.id);
+                  return (
                     <Checkbox
                       key={s.id}
                       checked={deptSouvenirs.includes(s.id)}
-                      onChange={() => setDeptSouvenirs((prev) => prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id])}
+                      disabled={given}
+                      onChange={() =>
+                        setDeptSouvenirs((prev) =>
+                          prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]
+                        )
+                      }
+                      label={given ? `${s.name} (recorded)` : s.name}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="modal-actions">
+            <button className="btn btn-outline" onClick={() => setAdmitting(null)}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-green"
+              onClick={admit}
+              disabled={saving || !admitForm.class_id}
+            >
+              {saving ? (
+                'Admitting...'
+              ) : (
+                <>
+                  <UserPlus size={20} /> Admit Fresher
+                </>
+              )}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ─── Verify pre-registration modal (School Admin) ─── */}
+      {verifying && schoolSide && (
+        <Modal
+          open
+          size="wide"
+          icon={<UserCheck size={20} />}
+          title={`Verify ${verifying.full_name}`}
+          subtitle="Check their details, correct anything wrong, assign a department, and record School dues & souvenirs."
+          onClose={() => setVerifying(null)}
+        >
+          <form onSubmit={verifyApp}>
+            <div className="modal-section">
+              <div className="modal-section-title">
+                <Student size={16} /> Fresher Details
+              </div>
+              <div className="grid grid-2">
+                <div className="field">
+                  <label>Full Name *</label>
+                  <input
+                    className="input"
+                    value={verifyForm.name}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label>Reference Number *</label>
+                  <input
+                    className="input"
+                    value={verifyForm.student_no}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, student_no: e.target.value })}
+                    placeholder="e.g. REF-2026-00123"
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label>Phone</label>
+                  <input
+                    className="input"
+                    value={verifyForm.phone}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, phone: e.target.value })}
+                    placeholder="e.g. 0244 000 000"
+                  />
+                </div>
+                <div className="field">
+                  <label>Email</label>
+                  <input
+                    className="input"
+                    type="email"
+                    value={verifyForm.email}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, email: e.target.value })}
+                    placeholder="name@example.com"
+                  />
+                </div>
+                <div className="field">
+                  <label>Programme of Choice</label>
+                  <input
+                    className="input"
+                    value={verifyForm.programme}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, programme: e.target.value })}
+                    placeholder="e.g. BSc. Computer Science"
+                  />
+                </div>
+                <div className="field">
+                  <label>Gender</label>
+                  <Select
+                    value={verifyForm.gender}
+                    onChange={(v) => setVerifyForm({ ...verifyForm, gender: v })}
+                    options={GENDER_OPTIONS}
+                    placeholder="Select gender..."
+                  />
+                </div>
+                <div className="field">
+                  <label>Hometown / Region</label>
+                  <input
+                    className="input"
+                    value={verifyForm.hometown}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, hometown: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Admission Year</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="2000"
+                    max="2100"
+                    value={verifyForm.admission_year}
+                    onChange={(e) =>
+                      setVerifyForm({ ...verifyForm, admission_year: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Assign to Department *</label>
+                <Select
+                  value={verifyForm.department_id}
+                  onChange={(v) => setVerifyForm({ ...verifyForm, department_id: v })}
+                  options={deptOptions}
+                  placeholder="Select department..."
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="modal-section">
+              <div className="modal-section-title">
+                <CurrencyCircleDollar size={16} /> School Dues Payment
+              </div>
+              <p className="muted text-sm mb">Pre-filled and editable.</p>
+              <div className="grid grid-3">
+                <div className="field">
+                  <label>Amount (GHS)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={verifyPay.amount}
+                    onChange={(e) => setVerifyPay({ ...verifyPay, amount: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Method</label>
+                  <Select
+                    value={verifyPay.method}
+                    onChange={(v) => setVerifyPay({ ...verifyPay, method: v })}
+                    options={METHOD_OPTIONS}
+                  />
+                </div>
+                <div className="field">
+                  <label>Date</label>
+                  <DatePicker
+                    value={verifyPay.paid_at}
+                    onChange={(v) => setVerifyPay({ ...verifyPay, paid_at: v })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {schoolSouvenirList.length > 0 && (
+              <div className="modal-section">
+                <div className="modal-section-title">
+                  <Gift size={16} /> School Souvenirs
+                </div>
+                <div className="grid grid-2">
+                  {schoolSouvenirList.map((s) => (
+                    <Checkbox
+                      key={s.id}
+                      checked={verifySouv.includes(s.id)}
+                      onChange={() =>
+                        setVerifySouv((prev) =>
+                          prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]
+                        )
+                      }
                       label={s.name}
                     />
                   ))}
@@ -593,17 +1105,232 @@ export default function Freshers() {
               </div>
             )}
 
-            <div className="flex gap mt">
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setVerifying(null)}>
+                Cancel
+              </button>
               <button
                 className="btn btn-green"
-                onClick={adopt}
-                disabled={loading || (!deptId && isSchool) || !classId || !deptPayment.amount || Number(deptPayment.amount) <= 0 || !deptPayment.paid_at || (deptSouvenirList.length > 0 && deptSouvenirs.length === 0)}
+                disabled={
+                  saving ||
+                  !verifyForm.name.trim() ||
+                  !verifyForm.student_no.trim() ||
+                  !verifyForm.department_id
+                }
               >
-                {loading ? 'Assigning...' : <><UserPlus size={18} /> Assign & Record Dues</>}
+                <UserCheck size={18} /> {saving ? 'Verifying...' : 'Verify & Assign Department'}
               </button>
-              <button className="btn btn-outline" onClick={() => setSelected(null)}>Cancel</button>
             </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ─── Registered freshers (school) / admit queue (dept) ─── */}
+      {!(schoolSide && tab === 'prereg') && (
+        <div className="card">
+          <div className="field" style={{ maxWidth: 400 }}>
+            <input
+              className="input search-input"
+              placeholder="Search by name or student number..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Student No</th>
+                  <th>{schoolSide ? 'Department' : 'Status'}</th>
+                  {schoolSide && <th>Status</th>}
+                  <th>Class</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.length === 0 && (
+                  <tr>
+                    <td colSpan={schoolSide ? 6 : 5} className="muted">
+                      {schoolSide
+                        ? 'No freshers registered yet. Click "Register Fresher" to capture one.'
+                        : tab === 'pending'
+                          ? 'No freshers are waiting for admission in your department right now.'
+                          : 'No admitted freshers yet.'}
+                    </td>
+                  </tr>
+                )}
+                {paged.map((f) => {
+                  const st = statusBadge(f);
+                  return (
+                    <tr
+                      key={f.id}
+                      className="row-click"
+                      onClick={() => setDetails(f)}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setDetails(f);
+                        }
+                      }}
+                    >
+                      <td className="fw-600">{f.name}</td>
+                      <td>{f.student_no || '-'}</td>
+                      <td>
+                        {schoolSide ? (
+                          f.department_name || '-'
+                        ) : (
+                          <span className={`badge ${st.cls}`}>{st.label}</span>
+                        )}
+                      </td>
+                      {schoolSide && (
+                        <td>
+                          <span className={`badge ${st.cls}`}>{st.label}</span>
+                        </td>
+                      )}
+                      <td>{f.class_name || '-'}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-sm">
+                          {!schoolSide && !f.admitted_at && (
+                            <button className="btn btn-sm btn-primary" onClick={() => openAdmit(f)}>
+                              <UserPlus size={14} /> Admit
+                            </button>
+                          )}
+                          {schoolSide && (
+                            <>
+                              <button
+                                className="btn btn-sm btn-outline"
+                                onClick={() => openEdit(f)}
+                                title="Edit"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              {isSchoolAdmin && (
+                                <button
+                                  className="btn btn-sm btn-danger"
+                                  onClick={() => deleteFresher(f)}
+                                  title="Delete"
+                                >
+                                  <Trash size={14} />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={page}
+            totalPages={Math.ceil(freshers.length / PAGE_SIZE)}
+            onPageChange={setPage}
+            totalItems={freshers.length}
+            pageSize={PAGE_SIZE}
+          />
+        </div>
+      )}
+
+      {/* ─── School Admin: pre-registrations awaiting verification ─── */}
+      {schoolSide && tab === 'prereg' && (
+        <div className="card">
+          {isSchoolAdmin && (
+            <div className="mb">
+              <p className="muted text-sm">
+                Freshers still at home fill this once — verify them on reporting day.
+              </p>
+              <div className="flex align-center gap-sm mt-sm" style={{ flexWrap: 'wrap' }}>
+                <span className="code-cell">{preregLink()}</span>
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => copyText(preregLink(), 'Pre-registration link')}
+                >
+                  <Copy size={14} /> Copy link
+                </button>
+                {accessCode && (
+                  <>
+                    <span className="muted text-sm">access code:</span>
+                    <span className="code-cell">{accessCode}</span>
+                    <button
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => copyText(accessCode, 'Access code')}
+                      title="Copy access code"
+                    >
+                      <Copy size={13} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="field" style={{ maxWidth: 400 }}>
+            <input
+              className="input search-input"
+              placeholder="Search submissions by name or student number..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Student No</th>
+                  <th>Programme</th>
+                  <th>Phone</th>
+                  <th>Submitted</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {appPager.slice.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      No pre-registrations yet. Share the form link above with incoming freshers.
+                    </td>
+                  </tr>
+                )}
+                {appPager.slice.map((a) => (
+                  <tr key={a.id}>
+                    <td className="fw-600">{a.full_name}</td>
+                    <td>{a.student_no || '-'}</td>
+                    <td>{a.programme || '-'}</td>
+                    <td>{a.phone || '-'}</td>
+                    <td>{new Date(a.created_at).toLocaleDateString()}</td>
+                    <td>
+                      <div className="flex gap-sm">
+                        <button className="btn btn-sm btn-primary" onClick={() => openVerify(a)}>
+                          <UserCheck size={14} /> Verify
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => deleteApp(a)}
+                          title="Remove submission"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={appPager.page}
+            totalPages={appPager.totalPages}
+            onPageChange={appPager.setPage}
+            totalItems={appPager.totalItems}
+            pageSize={appPager.perPage}
+          />
         </div>
       )}
     </div>

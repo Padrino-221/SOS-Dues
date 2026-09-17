@@ -1,7 +1,4 @@
-import {
-  CheckCircle,
-  XCircle,
-} from '@phosphor-icons/react';
+import { CheckCircle, XCircle } from '@phosphor-icons/react';
 
 /**
  * Displays a student's clearance status as a compact row of 4 badges.
@@ -37,8 +34,7 @@ export default function ClearanceBadge({
             title={`${label}: ${paid ? 'Done' : 'Pending'}`}
             style={{ fontSize: 11, padding: '2px 8px' }}
           >
-            {paid ? <CheckCircle size={11} weight="fill" /> : <XCircle size={11} />}
-            {' '}{label}
+            {paid ? <CheckCircle size={11} /> : <XCircle size={11} />} {label}
           </span>
         ))}
       </div>
@@ -52,15 +48,19 @@ export default function ClearanceBadge({
         <div
           key={label}
           style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '6px 12px', borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            borderRadius: 8,
             background: paid ? 'var(--green-light)' : 'var(--red-light)',
             border: `1px solid ${paid ? '#BBF7D0' : '#FECACA'}`,
-            fontSize: 13, fontWeight: 600,
+            fontSize: 13,
+            fontWeight: 600,
             color: paid ? 'var(--green-dark)' : 'var(--red)',
           }}
         >
-          {paid ? <CheckCircle size={14} weight="fill" /> : <XCircle size={14} weight="fill" />}
+          {paid ? <CheckCircle size={14} /> : <XCircle size={14} />}
           {label}
         </div>
       ))}
