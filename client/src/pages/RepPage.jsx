@@ -4,16 +4,11 @@ import api from '../api/client';
 import {
   LockKey,
   MagnifyingGlass,
-  CurrencyCircleDollar,
   ArrowClockwise,
   ArrowLeft,
   CheckCircle,
-  HandCoins,
-  DeviceMobile,
   Eye,
   EyeSlash,
-  House,
-  CalendarBlank,
 } from '@phosphor-icons/react';
 import Select from '../components/ui/Select';
 import Modal from '../components/ui/Modal';
@@ -327,7 +322,7 @@ export default function RepPage() {
           </div>
           <div className="rep-top-right">
             <a className="rep-home" href="/">
-              <House size={15} weight="bold" /> Home
+              Home
             </a>
           </div>
         </div>
@@ -399,12 +394,6 @@ export default function RepPage() {
               </div>
               <p className="rep-eyebrow">Protected page</p>
               <h2 style={{ textAlign: 'center' }}>Enter the PIN to collect dues</h2>
-              <p
-                className="muted"
-                style={{ textAlign: 'center', maxWidth: 360, margin: '4px auto 0' }}
-              >
-                Recording for <strong>{dept.name}</strong> is protected.
-              </p>
 
               {dept.pin_set === false && (
                 <div className="alert alert-error" style={{ marginTop: 18 }}>
@@ -454,9 +443,6 @@ export default function RepPage() {
                     <LockKey size={18} weight="bold" />
                     {unlocking ? 'Unlocking...' : 'Unlock & Continue'}
                   </button>
-                  <p className="muted text-xs" style={{ textAlign: 'center', marginTop: 12 }}>
-                    Don't have the PIN? Ask the department admin.
-                  </p>
                 </form>
               )}
             </div>
@@ -485,9 +471,6 @@ export default function RepPage() {
               {step === 'class' && (
                 <form onSubmit={lookupStudent} className="rep-screen">
                   <h2 className="rep-screen-title">Select the class or level and student</h2>
-                  <p className="muted text-sm" style={{ marginTop: -8, marginBottom: 20 }}>
-                    Enter the student's number to see what they still owe.
-                  </p>
 
                   <div className="rep-mode-grid">
                     <button
@@ -496,7 +479,6 @@ export default function RepPage() {
                       onClick={() => setMode('class')}
                     >
                       <span className="rep-mode-title">By Class</span>
-                      <span className="rep-mode-sub">Collect from a specific class</span>
                     </button>
                     <button
                       type="button"
@@ -504,9 +486,6 @@ export default function RepPage() {
                       onClick={() => setMode('level')}
                     >
                       <span className="rep-mode-title">By Level</span>
-                      <span className="rep-mode-sub">
-                        Collect from a whole level (e.g. Level 200)
-                      </span>
                     </button>
                   </div>
 
@@ -555,9 +534,6 @@ export default function RepPage() {
                     <MagnifyingGlass size={19} weight="regular" />
                     {lookingUp ? 'Checking...' : 'Find Student'}
                   </button>
-                  <p className="muted text-xs" style={{ textAlign: 'center', marginTop: 12 }}>
-                    Student not showing? Ask the department admin to add them.
-                  </p>
                 </form>
               )}
 
@@ -587,13 +563,7 @@ export default function RepPage() {
 
                   <div className="rep-amount" style={{ marginBottom: 14 }}>
                     <div className="rep-amount-head">
-                      <span className="rep-amount-icon">
-                        <CalendarBlank size={20} weight="regular" />
-                      </span>
-                      <div>
-                        <label>Academic year</label>
-                        <p className="muted text-xs">The year this payment applies to.</p>
-                      </div>
+                      <label className="rep-amount-text">Academic year</label>
                       <div className="rep-year-select">
                         <Select
                           value={academicYear}
@@ -611,18 +581,7 @@ export default function RepPage() {
                   ) : (
                     <div className="rep-amount">
                       <div className="rep-amount-head">
-                        <span className="rep-amount-icon">
-                          <CurrencyCircleDollar size={20} weight="regular" />
-                        </span>
-                        <div>
-                          <label>School Dues</label>
-                          <p className="muted text-xs">
-                            {Number(student.school_dues_paid_amount || 0) > 0
-                              ? `Paid GHS ${Number(student.school_dues_paid_amount).toFixed(2)} of GHS ${Number(student.school_dues_required || 0).toFixed(2)}. `
-                              : ''}
-                            Amount owed for {academicYear || 'this year'}.
-                          </p>
-                        </div>
+                        <label className="rep-amount-text">School Dues</label>
                         <div className="rep-amount-input">
                           <span className="rep-ghs">GHS</span>
                           <input
@@ -646,18 +605,7 @@ export default function RepPage() {
                   ) : (
                     <div className="rep-amount">
                       <div className="rep-amount-head">
-                        <span className="rep-amount-icon rep-amount-icon-gold">
-                          <CurrencyCircleDollar size={20} weight="regular" />
-                        </span>
-                        <div>
-                          <label>{dept.name} Dues</label>
-                          <p className="muted text-xs">
-                            {Number(student.dept_dues_paid_amount || 0) > 0
-                              ? `Paid GHS ${Number(student.dept_dues_paid_amount).toFixed(2)} of GHS ${Number(student.dept_dues_required || 0).toFixed(2)}. `
-                              : ''}
-                            Amount owed for {academicYear || 'this year'}.
-                          </p>
-                        </div>
+                        <label className="rep-amount-text">{dept.name} Dues</label>
                         <div className="rep-amount-input">
                           <span className="rep-ghs">GHS</span>
                           <input
@@ -682,16 +630,14 @@ export default function RepPage() {
                         className={`rep-method-btn ${method === 'cash' ? 'active' : ''}`}
                         onClick={() => setMethod('cash')}
                       >
-                        <HandCoins size={22} weight="regular" />
-                        <span>Cash</span>
+                        Cash
                       </button>
                       <button
                         type="button"
                         className={`rep-method-btn ${method === 'momo' ? 'active' : ''}`}
                         onClick={() => setMethod('momo')}
                       >
-                        <DeviceMobile size={22} weight="regular" />
-                        <span>Mobile Money</span>
+                        Mobile Money
                       </button>
                     </div>
                   </div>
@@ -765,13 +711,6 @@ export default function RepPage() {
                       </div>
                     </div>
                   </div>
-
-                  <p
-                    className="muted text-sm"
-                    style={{ textAlign: 'center', maxWidth: 400, margin: '0 auto 18px' }}
-                  >
-                    Give this receipt number to the student.
-                  </p>
 
                   <div className="rep-actions">
                     <button className="btn btn-primary w-full" onClick={resetFlow}>

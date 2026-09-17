@@ -218,7 +218,7 @@ export default function Apply() {
                 className="btn btn-primary"
                 disabled={sending || !form.full_name.trim() || !form.student_no.trim()}
               >
-                <PaperPlaneTilt size={18} /> {sending ? 'Submitting...' : 'Submit Pre-Registration'}
+                <PaperPlaneTilt size={18} /> {sending ? 'Submitting...' : 'Submit'}
               </button>
             </div>
           </form>
