@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, LockKey, UserCircle, Receipt } from '@phosphor-icons/react';
+import { ArrowRight, UserCircle } from '@phosphor-icons/react';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -95,12 +95,10 @@ export default function Landing() {
             </form>
 
             <p className="pub-panel-note">
-              <LockKey size={13} weight="regular" />
               PIN-protected recording.
             </p>
 
             <p className="pub-panel-note" style={{ marginTop: 12 }}>
-              <Receipt size={13} weight="regular" />
               <Link to="/records">Student? View your payment records</Link>
             </p>
           </aside>
