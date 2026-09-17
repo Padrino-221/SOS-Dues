@@ -155,49 +155,54 @@ export default function Apply() {
                 />
               </div>
               <div className="field">
-                <label>Phone Number</label>
+                <label>Phone Number *</label>
                 <input
                   className="input"
                   value={form.phone}
                   onChange={set('phone')}
                   placeholder="e.g. 0244 000 000"
+                  required
                 />
               </div>
               <div className="field">
-                <label>Email Address</label>
+                <label>Email Address *</label>
                 <input
                   className="input"
                   type="email"
                   value={form.email}
                   onChange={set('email')}
                   placeholder="name@example.com"
+                  required
                 />
               </div>
               <div className="field">
-                <label>Programme of Choice</label>
+                <label>Programme of Choice *</label>
                 <input
                   className="input"
                   value={form.programme}
                   onChange={set('programme')}
                   placeholder="e.g. BSc. Computer Science"
+                  required
                 />
               </div>
               <div className="field">
-                <label>Gender</label>
+                <label>Gender *</label>
                 <Select
                   value={form.gender}
                   onChange={(v) => setForm({ ...form, gender: v })}
                   options={GENDER_OPTIONS}
                   placeholder="Select gender..."
+                  required
                 />
               </div>
               <div className="field" style={{ gridColumn: '1 / -1' }}>
-                <label>Hometown / Region</label>
+                <label>Hometown / Region *</label>
                 <input
                   className="input"
                   value={form.hometown}
                   onChange={set('hometown')}
                   placeholder="e.g. Sunyani, Bono Region"
+                  required
                 />
               </div>
             </div>
@@ -214,7 +219,16 @@ export default function Apply() {
               <button
                 className="btn btn-primary"
                 style={{ flex: 1 }}
-                disabled={sending || !form.full_name.trim() || !form.student_no.trim()}
+                disabled={
+                  sending ||
+                  !form.full_name.trim() ||
+                  !form.student_no.trim() ||
+                  !form.phone.trim() ||
+                  !form.email.trim() ||
+                  !form.programme.trim() ||
+                  !form.gender ||
+                  !form.hometown.trim()
+                }
               >
                 <PaperPlaneTilt size={18} /> {sending ? 'Submitting...' : 'Submit'}
               </button>

@@ -56,6 +56,7 @@ export default function Freshers() {
   const isSchoolAdmin = user?.role === 'school_admin';
 
   const [freshers, setFreshers] = useState([]);
+  const [tabCounts, setTabCounts] = useState({ pending: 0, admitted: 0 });
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [depts, setDepts] = useState([]);
@@ -160,6 +161,23 @@ export default function Freshers() {
       .catch(() => setLoadError('Fresher records could not be loaded.'));
   }, [search, schoolSide, tab]);
 
+  // Fetch tab counts for dept admin
+  const loadTabCounts = useCallback(() => {
+    if (schoolSide) return;
+    const params = {};
+    if (search) params.search = search;
+    Promise.all([
+      api.get('/students', { params: { ...params, status: 'pending' } }),
+      api.get('/students', { params: { ...params, status: 'admitted' } }),
+    ]).then(([p, a]) => {
+      setTabCounts({ pending: p.data.length, admitted: a.data.length });
+    }).catch(() => {});
+  }, [search, schoolSide]);
+
+  useEffect(() => {
+    loadTabCounts();
+  }, [loadTabCounts]);
+
   useEffect(() => {
     setPage(1);
   }, [search, tab]);
@@ -193,7 +211,7 @@ export default function Freshers() {
       loadFreshers();
       if (schoolSide) loadApps();
     },
-    'fresher:admitted': loadFreshers,
+    'fresher:admitted': () => { loadFreshers(); loadTabCounts(); },
     'payment:new': loadFreshers,
     'student:changed': loadFreshers,
   });
@@ -423,6 +441,7 @@ export default function Freshers() {
       );
       setAdmitting(null);
       loadFreshers();
+      loadTabCounts();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed to admit fresher', 'error');
     } finally {
@@ -609,8 +628,8 @@ export default function Freshers() {
               ],
             ]
           : [
-              ['pending', 'Pending Admission'],
-              ['admitted', 'Admitted'],
+              ['pending', `Pending Admission${tabCounts.pending ? ` (${tabCounts.pending})` : ''}`],
+              ['admitted', `Admitted${tabCounts.admitted ? ` (${tabCounts.admitted})` : ''}`],
             ]
         ).map(([key, label]) => (
           <button

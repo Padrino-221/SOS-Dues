@@ -1174,9 +1174,11 @@ export default function Students() {
                   <td>{s.student_no || '-'}</td>
                   <td>{s.department_name || '-'}</td>
                   <td>
-                    <span className="badge badge-blue">
-                      {s.level_label || (s.level ? `Level ${s.level}` : '—')}
-                    </span>
+                    {!s.is_graduated && (
+                      <span className="badge badge-blue">
+                        {s.level_label || (s.level ? `Level ${s.level}` : '—')}
+                      </span>
+                    )}
                     {s.is_graduated && (
                       <span className="badge badge-red" style={{ marginLeft: 6 }}>
                         Graduated

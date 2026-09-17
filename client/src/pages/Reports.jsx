@@ -28,24 +28,31 @@ export default function Reports() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [selectedDeptId, setSelectedDeptId] = useState('');
+  const [selectedLevel, setSelectedLevel] = useState('');
   const deptPager = usePagination(data?.departments || [], 10);
 
   const filteredClasses = useMemo(() => {
     const list = data?.classes || [];
-    if (!selectedDeptId) return list;
 
-    const deptObj = (data?.departments || []).find(
-      (d) => String(d.id) === String(selectedDeptId) || String(d.name) === String(selectedDeptId)
-    );
-    const targetId = deptObj ? String(deptObj.id) : String(selectedDeptId);
-    const targetName = deptObj ? String(deptObj.name).toLowerCase() : String(selectedDeptId).toLowerCase();
+    if (isSchool && selectedDeptId) {
+      const deptObj = (data?.departments || []).find(
+        (d) => String(d.id) === String(selectedDeptId) || String(d.name) === String(selectedDeptId)
+      );
+      const targetId = deptObj ? String(deptObj.id) : String(selectedDeptId);
+      const targetName = deptObj ? String(deptObj.name).toLowerCase() : String(selectedDeptId).toLowerCase();
+      return list.filter((c) => {
+        const cDeptId = c.department_id ? String(c.department_id) : '';
+        const cDeptName = c.department_name ? String(c.department_name).toLowerCase() : '';
+        return (cDeptId && cDeptId === targetId) || (cDeptName && cDeptName === targetName);
+      });
+    }
 
-    return list.filter((c) => {
-      const cDeptId = c.department_id ? String(c.department_id) : '';
-      const cDeptName = c.department_name ? String(c.department_name).toLowerCase() : '';
-      return (cDeptId && cDeptId === targetId) || (cDeptName && cDeptName === targetName);
-    });
-  }, [data?.classes, data?.departments, selectedDeptId]);
+    if (!isSchool && selectedLevel) {
+      return list.filter((c) => String(c.level) === String(selectedLevel));
+    }
+
+    return list;
+  }, [data?.classes, data?.departments, selectedDeptId, selectedLevel, isSchool]);
 
   const classPager = usePagination(filteredClasses, 10);
 
@@ -298,7 +305,7 @@ export default function Reports() {
             <Student size={16} style={{ marginRight: 6, color: 'var(--gold)' }} />
             Class / Level Breakdown
           </h3>
-          {data?.departments?.length > 0 && (
+          {isSchool && data?.departments?.length > 0 && (
             <div className="flex align-center gap-sm" style={{ width: 220 }}>
               <Funnel size={14} style={{ color: 'var(--text-muted)' }} />
               <div style={{ flex: 1 }}>
@@ -320,6 +327,27 @@ export default function Reports() {
               </div>
             </div>
           )}
+          {!isSchool && (
+            <div className="flex align-center gap-sm" style={{ width: 180 }}>
+              <Funnel size={14} style={{ color: 'var(--text-muted)' }} />
+              <div style={{ flex: 1 }}>
+                <Select
+                  value={selectedLevel}
+                  onChange={(val) => {
+                    setSelectedLevel(val);
+                    classPager.setPage(1);
+                  }}
+                  options={[
+                    { value: '', label: 'All levels' },
+                    ...Array.from(new Set((data?.classes || []).map((c) => c.level).filter(Boolean)))
+                      .sort()
+                      .map((l) => ({ value: String(l), label: `Level ${l}` })),
+                  ]}
+                  placeholder="All levels"
+                />
+              </div>
+            </div>
+          )}
         </div>
         <div className="table-wrap">
           <table className="table">
@@ -337,9 +365,11 @@ export default function Reports() {
               {classPager.slice.length === 0 && (
                 <tr>
                   <td colSpan={6} className="muted">
-                    {selectedDeptId
+                    {isSchool && selectedDeptId
                       ? 'No classes found for the selected department.'
-                      : 'No classes yet.'}
+                      : !isSchool && selectedLevel
+                        ? 'No classes found for the selected level.'
+                        : 'No classes yet.'}
                   </td>
                 </tr>
               )}

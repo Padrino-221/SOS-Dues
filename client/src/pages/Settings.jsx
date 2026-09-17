@@ -852,24 +852,21 @@ export default function Settings() {
                   <tr>
                     <th>Department</th>
                     <th>Code</th>
-                    <th>PIN</th>
                     <th>Classes</th>
                     <th>Students</th>
                     <th>Dues</th>
-                    <th>Admin</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {deptPager.slice.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="muted">
+                      <td colSpan={6} className="muted">
                         No departments yet.
                       </td>
                     </tr>
                   )}
                   {deptPager.slice.map((d) => {
-                    const admin = admins.find((a) => a.department_id === d.id);
                     return (
                       <tr key={d.id}>
                         <td className="fw-600">{d.name}</td>
@@ -883,19 +880,9 @@ export default function Settings() {
                             <Copy size={12} />
                           </button>
                         </td>
-                        <td>
-                          {d.pin_set ? (
-                            <span className="badge badge-green">Set</span>
-                          ) : (
-                            <span className="muted text-xs">—</span>
-                          )}
-                        </td>
                         <td>{d.class_count}</td>
                         <td>{d.student_count}</td>
                         <td className="fw-600">GHS {Number(d.dues_amount || 0).toFixed(2)}</td>
-                        <td className="text-sm">
-                          {admin ? admin.name : <span className="muted text-xs">—</span>}
-                        </td>
                         <td>
                           <div className="flex gap-sm">
                             <button
@@ -1623,7 +1610,7 @@ export default function Settings() {
                     <tr key={c.id}>
                       <td className="fw-600">{c.name}</td>
                       <td>
-                        <span className="badge badge-gray">Level {c.level}</span>
+                        <span className="badge badge-gray">{c.level}</span>
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div className="flex gap-sm" style={{ justifyContent: 'flex-end' }}>

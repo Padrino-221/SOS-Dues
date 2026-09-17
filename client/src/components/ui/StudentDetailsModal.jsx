@@ -9,6 +9,7 @@ import {
   MapPin,
   CalendarBlank,
   Receipt as ReceiptIcon,
+  Gift,
 } from '@phosphor-icons/react';
 import Modal from './Modal';
 import api from '../../api/client';
@@ -32,6 +33,7 @@ const TYPE_LABEL = {
 
 export default function StudentDetailsModal({ student, onClose }) {
   const [payments, setPayments] = useState([]);
+  const [souvenirs, setSouvenirs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -39,10 +41,15 @@ export default function StudentDetailsModal({ student, onClose }) {
     if (!student?.id) return;
     setLoading(true);
     setError('');
-    api
-      .get(`/students/${student.id}/payments`)
-      .then((res) => setPayments(res.data))
-      .catch(() => setError('Payment history could not be loaded.'))
+    Promise.all([
+      api.get(`/students/${student.id}/payments`),
+      api.get(`/students/${student.id}/souvenirs`),
+    ])
+      .then(([p, s]) => {
+        setPayments(p.data);
+        setSouvenirs(s.data);
+      })
+      .catch(() => setError('Student data could not be loaded.'))
       .finally(() => setLoading(false));
   }, [student?.id]);
 
@@ -79,8 +86,8 @@ export default function StudentDetailsModal({ student, onClose }) {
             <span className={`badge ${student.is_fresher ? 'badge-gold' : 'badge-navy'}`}>
               {statusText}
             </span>
-            {student.level_label && <span className="badge badge-blue">{student.level_label}</span>}
-            {student.class_name && <span className="badge badge-gray">{student.class_name}</span>}
+            {student.level_label && !student.is_graduated && <span className="badge badge-blue">{student.level_label}</span>}
+            {student.class_name && !student.is_graduated && <span className="badge badge-gray">{student.class_name}</span>}
             {student.is_graduated && <span className="badge badge-red">Graduated</span>}
           </div>
           <div className="stu-hero-subtitle">
@@ -159,6 +166,26 @@ export default function StudentDetailsModal({ student, onClose }) {
           </div>
         )}
       </div>
+
+      {souvenirs.length > 0 && (
+        <div className="modal-section">
+          <div className="modal-section-title">
+            <Gift size={16} /> Souvenirs Received
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {souvenirs.map((s, i) => (
+              <span
+                key={`${s.souvenir_id}-${i}`}
+                className="badge badge-green"
+                style={{ fontWeight: 600 }}
+              >
+                {s.souvenir_name}
+                {s.level ? ` · ${s.level}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

@@ -138,8 +138,13 @@ router.get('/', async (req, res, next) => {
       );
     }
     if (req.query.is_fresher !== undefined) {
-      params.push(req.query.is_fresher === 'true');
-      conds.push(`s.is_fresher = $${params.length}`);
+      if (req.query.is_fresher === 'true') {
+        params.push(true);
+        conds.push(`s.is_fresher = $${params.length}`);
+      } else {
+        // "is_fresher=false" means non-freshers AND admitted freshers (they have a class now)
+        conds.push(`(s.is_fresher = false OR (s.is_fresher = true AND s.admitted_at IS NOT NULL))`);
+      }
     }
     if (req.query.status === 'pending') conds.push(`s.is_fresher = true AND s.admitted_at IS NULL`);
     if (req.query.status === 'admitted') conds.push(`s.admitted_at IS NOT NULL`);

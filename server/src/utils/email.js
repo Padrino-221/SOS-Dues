@@ -143,9 +143,7 @@ function generateReceiptHtml({
     ? `<div style="font-size:13px; font-weight:700; color:#8f6618; margin-top:6px;">
         Souvenir Collection Receipt
       </div>`
-    : `<div style="font-size:15px; font-weight:700; color:#8f6618; margin-top:6px;">
-        Amount Paid: GHS ${numericTotal.toFixed(2)}
-      </div>`;
+    : '';
 
   const paymentSummaryRows = `
     <tr>
