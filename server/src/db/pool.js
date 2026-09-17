@@ -1,9 +1,19 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// Neon appends `channel_binding=require`, which node-postgres (libpq is not
+// used) does not understand. Drop it so the connection string parses cleanly.
+function normalizeConnectionString(value) {
+  if (!value) return value;
+  const [base, query] = value.split('?');
+  if (!query) return value;
+  const params = query.split('&').filter((p) => p && !p.startsWith('channel_binding='));
+  return params.length ? `${base}?${params.join('&')}` : base;
+}
+
 // Prefer a single connection string (Neon/Vercel) when provided, otherwise fall
 // back to the discrete PG* variables used for local development.
-const connectionString = process.env.DATABASE_URL;
+const connectionString = normalizeConnectionString(process.env.DATABASE_URL);
 const isLocalConnection = connectionString && /localhost|127\.0\.0\.1/.test(connectionString);
 
 // Serverless deployments should keep the pool small (Neon's pooled endpoint
