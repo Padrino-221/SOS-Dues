@@ -207,15 +207,13 @@ export default function Apply() {
               No payment needed now — assignment happens on reporting day.
             </div>
 
-            <div
-              className="flex gap-sm"
-              style={{ justifyContent: 'space-between', alignItems: 'center' }}
-            >
+            <div className="flex gap-sm">
               <button type="button" className="btn btn-outline" onClick={backToCode}>
                 <ArrowLeft size={18} /> Back
               </button>
               <button
                 className="btn btn-primary"
+                style={{ flex: 1 }}
                 disabled={sending || !form.full_name.trim() || !form.student_no.trim()}
               >
                 <PaperPlaneTilt size={18} /> {sending ? 'Submitting...' : 'Submit'}
