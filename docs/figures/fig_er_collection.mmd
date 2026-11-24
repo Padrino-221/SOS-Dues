@@ -1,0 +1,10 @@
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E9EEF9','primaryTextColor':'#111111','primaryBorderColor':'#0D2063','lineColor':'#33415C','secondaryColor':'#FFF4D6','tertiaryColor':'#F7F9FC','fontFamily':'Times New Roman','fontSize':'16px','edgeLabelBackground':'#FFFFFF'}}}%%
+erDiagram
+  DEPARTMENTS ||--o{ USERS : employs
+  DEPARTMENTS ||--o{ STUDENTS : admits
+  DEPARTMENTS ||--o{ RECEIPTS : collects
+  STUDENTS ||--o{ RECEIPTS : pays
+  RECEIPTS ||--o{ PAYMENTS : itemises
+  USERS ||--o{ RECEIPTS : records
+  STUDENTS ||--o{ STUDENT_SOUVENIRS : receives
+  RECEIPTS ||--o{ STUDENT_SOUVENIRS : issues

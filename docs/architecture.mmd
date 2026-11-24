@@ -1,0 +1,29 @@
+flowchart LR
+    subgraph Public["Public pages"]
+        Landing["Landing /"]
+        Apply["Fresher pre-registration<br/>/apply"]
+        Records["Receipt lookup<br/>/records"]
+        Rep["Class rep collection<br/>/rep/:code"]
+    end
+
+    subgraph Admin["Admin SPA"]
+        Login["/login"]
+        Panel["/admin/*<br/>freshers, students, collect,<br/>receipts, verify, reports,<br/>health, settings, audit"]
+    end
+
+    Landing --> SPA["React 19 + Vite 8<br/>static bundle"]
+    Apply --> SPA
+    Records --> SPA
+    Rep --> SPA
+    Login --> SPA
+    Panel --> SPA
+
+    SPA -->|"REST /api + JWT"| Nginx["Nginx TLS<br/>dues.sosuenr.com"]
+    Nginx --> API["Express 5 API<br/>PM2 dues-api :3001"]
+    API --> Auth["JWT + role/department guards"]
+    API --> Routes["Routes<br/>freshers - students - receipts<br/>rep - reports - audit - settings"]
+    API --> Realtime["Socket.IO<br/>school + dept rooms"]
+    API --> PDF["PDFKit receipt PDFs"]
+    API --> Mail["SMTP receipt email"]
+    Routes --> DB[("PostgreSQL<br/>database: dues")]
+    Realtime --> SPA

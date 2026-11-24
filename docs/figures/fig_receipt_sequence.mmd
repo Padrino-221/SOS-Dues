@@ -1,0 +1,16 @@
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E9EEF9','primaryTextColor':'#111111','primaryBorderColor':'#0D2063','lineColor':'#33415C','secondaryColor':'#FFF4D6','tertiaryColor':'#F7F9FC','fontFamily':'Times New Roman','fontSize':'16px','edgeLabelBackground':'#FFFFFF'}}}%%
+sequenceDiagram
+  actor Collector
+  participant API as Dues API
+  participant DB as PostgreSQL
+  participant Mail as SMTP
+  Collector->>API: POST /api/receipts
+  API->>API: Check role, department scope and amounts
+  API->>DB: BEGIN
+  API->>DB: Advisory lock on index number
+  API->>DB: Reserve next lifetime sequence
+  API->>DB: Insert receipt, payment lines and souvenirs
+  API->>DB: COMMIT
+  API-->>Collector: Receipt number SOS-DUES-TAG-INDEX-n
+  API->>Mail: Send receipt email if configured
+  API-->>Collector: Receipt PDF

@@ -1,62 +1,63 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import {
-  House,
-  UserPlus,
-  Users,
-  HandCoins,
-  Receipt,
-  CheckCircle,
-  ChartBar,
-  Gear,
-  Clock,
-  GraduationCap,
-  List,
-  SignOut,
-} from '@phosphor-icons/react';
+import { IconHome as House, IconUserPlus as UserPlus, IconUsers as Users, IconCash as HandCoins, IconReceipt as Receipt, IconCircleCheck as CheckCircle, IconChartBar as ChartBar, IconSettings as Gear, IconClock as Clock, IconSchool as GraduationCap, IconList as List, IconLogout as SignOut, IconUsersGroup as UsersThree, IconShieldExclamation as ShieldWarning } from '@tabler/icons-react';
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const isSchool = user?.role === 'school_admin';
+  const isSuper = user?.role === 'super_admin';
+  const isSchool = user?.role === 'school_admin' || isSuper;
   const isSchoolStaff = user?.role === 'school_staff';
   const isDeptStaff = user?.role === 'dept_staff';
   const isAnySchool = isSchool || isSchoolStaff;
   const [drawer, setDrawer] = useState(false);
 
-  const nav = isSchoolStaff
+  const nav = isSuper
     ? [
+        { to: '/admin', label: 'Dashboard', end: true, Icon: House },
         { to: '/admin/freshers', label: 'Register Freshers', Icon: UserPlus },
-        { to: '/admin/students', label: 'All Students', Icon: Users },
-        { to: '/admin/verify', label: 'Verify Receipt', Icon: CheckCircle },
+        { to: '/admin/students', label: 'Students', Icon: Users },
+        { to: '/admin/receipts', label: 'Receipts', Icon: Receipt },
+        { to: '/admin/reports', label: 'Reports', Icon: ChartBar },
+        { to: '/admin/health', label: 'Data Health', Icon: ShieldWarning },
+        { to: '/admin/settings?tab=admins', label: 'Accounts', Icon: UsersThree },
+        { to: '/admin/audit', label: 'Audit Log', Icon: Clock },
       ]
-    : isDeptStaff
+    : isSchoolStaff
       ? [
-          { to: '/admin/freshers', label: 'Admit Freshers', Icon: UserPlus },
+          { to: '/admin/freshers', label: 'Register Freshers', Icon: UserPlus },
           { to: '/admin/students', label: 'Students', Icon: Users },
-          { to: '/admin/receipts', label: 'Receipts', Icon: Receipt },
           { to: '/admin/verify', label: 'Verify Receipt', Icon: CheckCircle },
         ]
-      : [
-          { to: '/admin', label: 'Dashboard', end: true, Icon: House },
-          {
-            to: '/admin/freshers',
-            label: isAnySchool ? 'Register Freshers' : 'Admit Freshers',
-            Icon: UserPlus,
-          },
-          {
-            to: '/admin/students',
-            label: isAnySchool ? 'All Students' : 'Students',
-            Icon: Users,
-          },
-          ...(isAnySchool ? [] : [{ to: '/admin/collect', label: 'Collect Dues', Icon: HandCoins }]),
-          { to: '/admin/receipts', label: 'Receipts', Icon: Receipt },
-          { to: '/admin/verify', label: 'Verify Receipt', Icon: CheckCircle },
-          { to: '/admin/reports', label: 'Reports', Icon: ChartBar },
-          { to: '/admin/settings', label: 'Settings', Icon: Gear },
-          ...(isSchool ? [{ to: '/admin/audit', label: 'Audit Log', Icon: Clock }] : []),
-        ];
+      : isDeptStaff
+        ? [
+            { to: '/admin/freshers', label: 'Admit Freshers', Icon: UserPlus },
+            { to: '/admin/receipts', label: 'Receipts', Icon: Receipt },
+            { to: '/admin/verify', label: 'Verify Receipt', Icon: CheckCircle },
+          ]
+        : [
+            { to: '/admin', label: 'Dashboard', end: true, Icon: House },
+            {
+              to: '/admin/freshers',
+              label: isAnySchool ? 'Register Freshers' : 'Admit Freshers',
+              Icon: UserPlus,
+            },
+            { to: '/admin/students', label: 'Students', Icon: Users },
+            ...(isAnySchool
+              ? []
+              : [{ to: '/admin/collect', label: 'Collect Dues', Icon: HandCoins }]),
+            { to: '/admin/receipts', label: 'Receipts', Icon: Receipt },
+            { to: '/admin/verify', label: 'Verify Receipt', Icon: CheckCircle },
+            { to: '/admin/reports', label: 'Reports', Icon: ChartBar },
+            { to: '/admin/settings', label: 'Settings', Icon: Gear },
+            ...(isSchool
+              ? [
+                  { to: '/admin/health', label: 'Data Health', Icon: ShieldWarning },
+                  { to: '/admin/audit', label: 'Audit Log', Icon: Clock },
+                ]
+              : []),
+          ];
 
   const initials = user?.name
     ? user.name
@@ -67,17 +68,19 @@ export default function AdminLayout() {
         .toUpperCase()
     : '??';
 
-  const roleLabel = isSchool
-    ? 'School Admin'
-    : isSchoolStaff
-      ? 'School Staff'
-      : isDeptStaff
-        ? user?.department_name
-          ? `Dept Staff · ${user.department_name}`
-          : 'Dept Staff'
-        : user?.department_name
-          ? `Dept Admin · ${user.department_name}`
-          : 'Dept Admin';
+  const roleLabel = isSuper
+    ? 'Super Admin'
+    : isSchool
+      ? 'School Admin'
+      : isSchoolStaff
+        ? 'School Staff'
+        : isDeptStaff
+          ? user?.department_name
+            ? `Dept Staff · ${user.department_name}`
+            : 'Dept Staff'
+          : user?.department_name
+            ? `Dept Admin · ${user.department_name}`
+            : 'Dept Admin';
 
   const doLogout = () => {
     logout();
@@ -101,7 +104,7 @@ export default function AdminLayout() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar${drawer ? ' open' : ''}`}>
+      <aside id="admin-sidebar" className={`sidebar${drawer ? ' open' : ''}`}>
         <div className="sidebar-brand">
           <span className="logo-dot">
             <GraduationCap size={22} />
@@ -112,7 +115,10 @@ export default function AdminLayout() {
           </div>
         </div>
 
-        <nav className="sidebar-nav">{navItems}</nav>
+        <nav className="sidebar-nav" aria-label="Admin sections">
+          {isSuper && <div className="nav-section-label">Super Admin</div>}
+          {navItems}
+        </nav>
 
         <div className="sidebar-bottom">
           <div className="sb-user">
@@ -138,7 +144,14 @@ export default function AdminLayout() {
             </span>
             School of Sciences
           </div>
-          <button className="mt-hamburger" aria-label="Open menu" onClick={() => setDrawer(true)}>
+          <button
+            className="mt-hamburger"
+            type="button"
+            aria-label="Open menu"
+            aria-expanded={drawer}
+            aria-controls="admin-sidebar"
+            onClick={() => setDrawer(true)}
+          >
             <List size={24} />
           </button>
         </div>

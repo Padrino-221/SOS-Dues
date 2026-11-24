@@ -1,30 +1,36 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '../api/client';
+import { asArray } from '../utils/asArray';
+import { mainDuesIssue } from '../utils/duesLimits';
+import { genderScopeNote } from '../utils/genderScope';
 import { useAuth } from '../context/AuthContext';
 import { useRealtime } from '../realtime';
 import {
-  UserPlus,
-  Plus,
-  Users,
-  CheckCircle,
-  Warning,
-  UserCheck,
-  Pencil,
-  Trash,
-  CurrencyCircleDollar,
-  Gift,
-  Student,
-  LinkSimple,
-  Copy,
-} from '@phosphor-icons/react';
+  IconUserPlus as UserPlus,
+  IconPlus as Plus,
+  IconUsers as Users,
+  IconCircleCheck as CheckCircle,
+  IconAlertTriangle as Warning,
+  IconUserCheck as UserCheck,
+  IconUserMinus as UserMinus,
+  IconPencil as Pencil,
+  IconTrash as Trash,
+  IconCurrencyDollar as CurrencyCircleDollar,
+  IconGift as Gift,
+  IconBackpack as Student,
+  IconLink as LinkSimple,
+  IconCopy as Copy,
+  IconDownload as DownloadSimple,
+  IconSend as PaperPlaneTilt,
+} from '@tabler/icons-react';
 import Select from '../components/ui/Select';
 import Checkbox from '../components/ui/Checkbox';
 import DatePicker from '../components/ui/DatePicker';
 import Confirm from '../components/ui/Confirm';
 import Modal from '../components/ui/Modal';
 import Pagination from '../components/ui/Pagination';
-import usePagination from '../components/ui/usePagination';
 import StudentDetailsModal from '../components/ui/StudentDetailsModal';
+import ResendConfirmModal from '../components/ui/ResendConfirmModal';
 
 function Toast({ message, type, onClose }) {
   useEffect(() => {
@@ -50,24 +56,86 @@ const GENDER_OPTIONS = [
   { value: 'Other', label: 'Other' },
 ];
 
+const APP_PAGE_SIZE = 10;
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+// Student reference numbers look like UA2309264: "UA" + 7 digits.
+const STUDENT_NO_RE = /^UA\d{7}$/i;
+
+// Tickable "Other Dues" lines for a fresher. Amounts default from the item
+// but stay editable — the server re-validates them against the collector's
+// scope (school-wide at verify/register, the department's own at admission)
+// before charging. `disabledNote(item)` greys items out (e.g. already charged).
+function ExtrasPicker({ items, selected, onToggle, onAmount, disabledNote }) {
+  if (!items.length) return null;
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {items.map((item) => {
+        const amount = selected[item.id];
+        const checked = amount !== undefined;
+        const note = disabledNote ? disabledNote(item) : null;
+        return (
+          <div
+            key={item.id}
+            className="flex gap-sm"
+            style={{ alignItems: 'center', flexWrap: 'wrap' }}
+          >
+            <div style={{ flex: '1 1 210px' }}>
+              <Checkbox
+                checked={checked}
+                disabled={Boolean(note)}
+                onChange={() => onToggle(item)}
+                label={note ? `${item.name} ${note}` : item.name}
+              />
+            </div>
+            {checked && (
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                min="0"
+                style={{ maxWidth: 150 }}
+                value={amount}
+                onChange={(e) => onAmount(item, e.target.value)}
+                aria-label={`${item.name} amount (GHS)`}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Freshers() {
   const { user } = useAuth();
-  const schoolSide = ['school_admin', 'school_staff'].includes(user?.role);
-  const isSchoolAdmin = user?.role === 'school_admin';
+  const schoolSide = ['school_admin', 'school_staff', 'super_admin'].includes(user?.role);
+  const isSchoolAdmin = user?.role === 'school_admin' || user?.role === 'super_admin';
+  // Resend receipt email(s): school admins (any student) + dept admins (own dept).
+  // Resend receipt email(s): every admin and staff role may use it — the
+  // server scopes it (school-side: any student; dept-side: own department).
+  const canResend = [
+    'school_admin',
+    'super_admin',
+    'school_staff',
+    'dept_admin',
+    'dept_staff',
+  ].includes(user?.role);
 
   const [freshers, setFreshers] = useState([]);
   const [tabCounts, setTabCounts] = useState({ pending: 0, admitted: 0 });
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [depts, setDepts] = useState([]);
-  const [classes, setClasses] = useState([]);
   const [souvenirs, setSouvenirs] = useState([]);
   const [schoolDues, setSchoolDues] = useState(''); // school-wide amount
   const [deptDues, setDeptDues] = useState(''); // own dept amount (dept admin)
   const [toasts, setToasts] = useState([]);
   const [tab, setTab] = useState(schoolSide ? 'registered' : 'pending'); // school: registered | prereg · dept: pending | admitted
   const [applications, setApplications] = useState([]);
-  const [accessCode, setAccessCode] = useState('');
+  const [appsTotal, setAppsTotal] = useState(0); // true total for the active prereg filter
+  const [preregCounts, setPreregCounts] = useState({ pending: 0, rejected: 0 });
+  const [preregTab, setPreregTab] = useState('pending'); // pending | rejected
+  const [appsPage, setAppsPage] = useState(1);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -76,6 +144,7 @@ export default function Freshers() {
 
   // Verify pre-registration modal (School Admin)
   const [verifying, setVerifying] = useState(null);
+  const [resendTarget, setResendTarget] = useState(null);
   const [verifyForm, setVerifyForm] = useState({
     name: '',
     student_no: '',
@@ -114,18 +183,32 @@ export default function Freshers() {
     paid_at: new Date().toISOString().slice(0, 10),
   });
   const [schoolSouvenirs, setSchoolSouvenirs] = useState([]);
+  // Other Dues: active dues items chargeable to freshers (school-wide +
+  // department items). Selection maps are { [item id]: amount string }.
+  const [duesItems, setDuesItems] = useState([]);
+  const [verifyExtras, setVerifyExtras] = useState({});
+  const [registerExtras, setRegisterExtras] = useState({});
 
   // Admit modal (Dept Admin)
   const [admitting, setAdmitting] = useState(null);
   const [admitForm, setAdmitForm] = useState({
-    class_id: '',
     amount: '',
     method: 'cash',
     paid_at: new Date().toISOString().slice(0, 10),
   });
+  // The department's own dues items, ticked at admission — plus the labels
+  // already charged to this student so the same item can't be collected twice.
+  const [admitExtras, setAdmitExtras] = useState({});
+  const [chargedExtraLabels, setChargedExtraLabels] = useState([]);
   const [deptSouvenirs, setDeptSouvenirs] = useState([]);
   const [givenSouvenirIds, setGivenSouvenirIds] = useState([]);
+
+  // Record remaining department souvenirs after admission (Dept Admin)
+  const [deptEditing, setDeptEditing] = useState(null);
+  const [deptEditSouvs, setDeptEditSouvs] = useState([]);
+  const [deptGivenIds, setDeptGivenIds] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Confirm delete
   const [confirm, setConfirm] = useState({
@@ -144,6 +227,29 @@ export default function Freshers() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Download the currently listed freshers as CSV (same scope + filters as
+  // the table: school sees every fresher, departments see their own queue).
+  const downloadFreshersCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params = {};
+      if (search) params.search = search;
+      if (!schoolSide) params.status = tab === 'admitted' ? 'admitted' : 'pending';
+      const res = await api.get('/students/export', { params, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'freshers.csv';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      addToast('Could not download the CSV. Please try again.', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const loadFreshers = useCallback(() => {
     setLoadError('');
     const params = {};
@@ -156,7 +262,7 @@ export default function Freshers() {
       .then((res) => {
         // Dept admin: pending queue is all freshers still waiting.
         // School admin: only freshers (list already filtered server-side).
-        setFreshers(res.data);
+        setFreshers(asArray(res.data));
       })
       .catch(() => setLoadError('Fresher records could not be loaded.'));
   }, [search, schoolSide, tab]);
@@ -169,9 +275,11 @@ export default function Freshers() {
     Promise.all([
       api.get('/students', { params: { ...params, status: 'pending' } }),
       api.get('/students', { params: { ...params, status: 'admitted' } }),
-    ]).then(([p, a]) => {
-      setTabCounts({ pending: p.data.length, admitted: a.data.length });
-    }).catch(() => {});
+    ])
+      .then(([p, a]) => {
+        setTabCounts({ pending: asArray(p.data).length, admitted: asArray(a.data).length });
+      })
+      .catch(() => {});
   }, [search, schoolSide]);
 
   useEffect(() => {
@@ -182,14 +290,50 @@ export default function Freshers() {
     setPage(1);
   }, [search, tab]);
 
-  // School: keep registered freshers AND pre-registration submissions fresh.
-  // Dept: just the admit queue.
+  useEffect(() => {
+    setAppsPage(1);
+  }, [search, preregTab]);
+
+  // School: pre-registration submissions, server-paginated so the list never
+  // silently truncates — the badge shows the true total and the second,
+  // lightweight request keeps the other filter's count fresh.
   const loadApps = useCallback(() => {
-    api
-      .get('/freshers', { params: { status: 'pending', search: search || undefined } })
-      .then((res) => setApplications(res.data))
+    const base = { paged: '1', search: search || undefined };
+    const other = preregTab === 'pending' ? 'rejected' : 'pending';
+    Promise.all([
+      api.get('/freshers', {
+        params: {
+          ...base,
+          status: preregTab,
+          limit: APP_PAGE_SIZE,
+          offset: (appsPage - 1) * APP_PAGE_SIZE,
+        },
+      }),
+      api.get('/freshers', { params: { ...base, status: other, limit: 1, offset: 0 } }),
+    ])
+      .then(([cur, otherRes]) => {
+        const norm = (data) =>
+          Array.isArray(data)
+            ? { items: data, total: data.length }
+            : { items: data.items || [], total: data.total || 0 };
+        const a = norm(cur.data);
+        const b = norm(otherRes.data);
+        // If the current page fell off the end (rows deleted/rejected/verified
+        // while on a later page), step back to the last page that exists.
+        if (a.items.length === 0 && appsPage > 1 && a.total > 0) {
+          setAppsPage(Math.max(1, Math.ceil(a.total / APP_PAGE_SIZE)));
+          return;
+        }
+        setApplications(a.items);
+        setAppsTotal(a.total);
+        setPreregCounts(
+          preregTab === 'pending'
+            ? { pending: a.total, rejected: b.total }
+            : { pending: b.total, rejected: a.total }
+        );
+      })
       .catch(() => setLoadError('Pre-registration records could not be loaded.'));
-  }, [search]);
+  }, [search, preregTab, appsPage]);
 
   useEffect(() => {
     loadFreshers();
@@ -206,12 +350,19 @@ export default function Freshers() {
     'fresher_application:removed': () => {
       if (schoolSide) loadApps();
     },
-    'fresher:registered': loadFreshers,
+    'fresher:registered': () => {
+      loadFreshers();
+      loadTabCounts();
+    },
     'fresher:verified': () => {
       loadFreshers();
+      loadTabCounts();
       if (schoolSide) loadApps();
     },
-    'fresher:admitted': () => { loadFreshers(); loadTabCounts(); },
+    'fresher:admitted': () => {
+      loadFreshers();
+      loadTabCounts();
+    },
     'payment:new': loadFreshers,
     'student:changed': loadFreshers,
   });
@@ -222,7 +373,6 @@ export default function Freshers() {
       .get('/settings')
       .then((res) => {
         setSchoolDues(res.data?.school_dues_amount || '');
-        setAccessCode(res.data?.fresher_access_code || '');
       })
       .catch(() => {});
     api
@@ -241,9 +391,11 @@ export default function Freshers() {
         .then((res) => setDeptDues(String(res.data?.[0]?.dues_amount || '')))
         .catch(() => {});
     }
+    // Both sides need the items — the desks charge school-wide ones; the
+    // department's admit modal charges its own. The API scopes the list by role.
     api
-      .get('/classes')
-      .then((res) => setClasses(res.data))
+      .get('/dues-items')
+      .then((res) => setDuesItems(asArray(res.data)))
       .catch(() => {});
   }, [schoolSide]);
 
@@ -251,6 +403,37 @@ export default function Freshers() {
   // hands out at admission are the 'department' category items.
   const schoolSouvenirList = souvenirs.filter((s) => s.category === 'school');
   const deptSouvenirList = souvenirs.filter((s) => s.category === 'department');
+
+  // ─── Other Dues (additional dues items, freshers only) ───
+  // Collection split: the verify and registration desks charge SCHOOL-WIDE
+  // items only (school money); a department's own items are collected by that
+  // department in the admit modal. Selections outside the visible list are
+  // filtered out at render and submit — swapping departments never needs to
+  // prune state.
+  const schoolItems = duesItems.filter((i) => i.active && i.department_id == null);
+  const itemsForDept = (deptId) =>
+    duesItems.filter(
+      (i) => i.active && i.department_id != null && Number(i.department_id) === Number(deptId)
+    );
+  const tickedExtras = (sel, items) => items.filter((i) => sel[i.id] !== undefined);
+  const extrasSum = (sel, items) =>
+    tickedExtras(sel, items).reduce((s, i) => s + (Number(sel[i.id]) || 0), 0);
+  const extrasPayload = (sel, items) =>
+    tickedExtras(sel, items).map((i) => ({
+      dues_item_id: i.id,
+      amount: Number(sel[i.id]) || 0,
+    }));
+  // First ticked item with a missing/non-positive amount — refused before
+  // submit so the server never has to bounce the whole verification.
+  const invalidExtra = (sel, items) =>
+    tickedExtras(sel, items).find((i) => !(Number(sel[i.id]) > 0)) || null;
+  const toggleExtra = (setter) => (item) =>
+    setter((prev) => {
+      const next = { ...prev };
+      if (next[item.id] !== undefined) delete next[item.id];
+      else next[item.id] = String(item.amount ?? '');
+      return next;
+    });
 
   // ─── School Admin: register / edit fresher ───
   const openCreate = () => {
@@ -273,6 +456,7 @@ export default function Freshers() {
     });
     setSchoolSouvenirs([]);
     setGivenSouvenirIds([]);
+    setRegisterExtras({});
     setShowRegister(true);
   };
 
@@ -294,7 +478,7 @@ export default function Freshers() {
     api
       .get(`/students/${f.id}/souvenirs`)
       .then((res) => {
-        const ids = res.data.map((r) => r.souvenir_id);
+        const ids = asArray(res.data).map((r) => r.souvenir_id);
         setGivenSouvenirIds(ids);
         setSchoolSouvenirs(ids);
       })
@@ -305,7 +489,7 @@ export default function Freshers() {
   const buildPayload = (isFresher, departmentId) => {
     const payload = {
       name: studentForm.name.trim(),
-      student_no: studentForm.student_no.trim() || null,
+      student_no: studentForm.student_no.trim().toUpperCase() || null,
       phone: studentForm.phone.trim() || null,
       email: studentForm.email.trim() || null,
       programme: studentForm.programme.trim() || null,
@@ -326,14 +510,42 @@ export default function Freshers() {
         setSaving(false);
         return;
       }
-      if (schoolSouvenirs.length > 0 && Number(schoolPayment.amount) <= 0) {
-        addToast('A School Dues amount is required to record souvenirs.', 'error');
+      if (!STUDENT_NO_RE.test((studentForm.student_no || '').trim())) {
+        addToast('Enter a valid reference number (e.g. UA2309264).', 'error');
+        setSaving(false);
+        return;
+      }
+      const badExtra = invalidExtra(registerExtras, schoolItems);
+      if (badExtra) {
+        addToast(`Enter an amount above 0 for "${badExtra.name}", or untick it.`, 'error');
+        setSaving(false);
+        return;
+      }
+      const duesIssue = mainDuesIssue(schoolPayment.amount, 'School dues');
+      if (duesIssue) {
+        addToast(duesIssue, 'error');
+        setSaving(false);
+        return;
+      }
+      const extras = extrasPayload(registerExtras, schoolItems);
+      if (schoolSouvenirs.length > 0 && Number(schoolPayment.amount) <= 0 && extras.length === 0) {
+        addToast(
+          'A payment (School dues or an additional dues item) is required to record souvenirs.',
+          'error'
+        );
         setSaving(false);
         return;
       }
       const res = await api.post('/students/freshers', {
         ...buildPayload(true, studentForm.department_id),
-        payment: Number(schoolPayment.amount) > 0 ? schoolPayment : undefined,
+        payment:
+          Number(schoolPayment.amount) > 0 || extras.length > 0
+            ? {
+                ...schoolPayment,
+                amount: Number(schoolPayment.amount) || 0,
+                ...(extras.length ? { extras } : {}),
+              }
+            : undefined,
         souvenir_ids: schoolSouvenirs.length > 0 ? schoolSouvenirs : undefined,
       });
       const student = res.data;
@@ -393,41 +605,71 @@ export default function Freshers() {
     });
   };
 
-  // ─── Dept Admin: admit ───
+  // ─── Dept Admin: admit (freshers always enter at Level 100) ───
   const openAdmit = (f) => {
     setAdmitting(f);
     setAdmitForm({
-      class_id: f.class_id ? String(f.class_id) : '',
       amount: deptDues || '',
       method: 'cash',
       paid_at: new Date().toISOString().slice(0, 10),
     });
+    setAdmitExtras({});
+    setChargedExtraLabels([]);
     setDeptSouvenirs([]);
     setGivenSouvenirIds([]);
     api
       .get(`/students/${f.id}/souvenirs`)
       .then((res) => {
-        const ids = res.data.filter((r) => r.level === 'department').map((r) => r.souvenir_id);
+        const ids = asArray(res.data)
+          .filter((r) => r.level === 'department')
+          .map((r) => r.souvenir_id);
         setGivenSouvenirIds(ids);
         setDeptSouvenirs(ids);
       })
       .catch(() => {});
+    // Items already charged to this fresher (e.g. collected earlier) are
+    // greyed out in the picker — an item is only ever charged once.
+    api
+      .get(`/students/${f.id}/payments`)
+      .then((res) => {
+        const labels = asArray(res.data)
+          .filter((p) => p.type === 'extra_dues' && p.label)
+          .map((p) => p.label);
+        setChargedExtraLabels([...new Set(labels)]);
+      })
+      .catch(() => setChargedExtraLabels([]));
   };
 
   const admit = async () => {
+    const admitItems = itemsForDept(admitting.department_id);
+    const badAdmitExtra = invalidExtra(admitExtras, admitItems);
+    if (badAdmitExtra) {
+      addToast(`Enter an amount above 0 for "${badAdmitExtra.name}", or untick it.`, 'error');
+      return;
+    }
+    const extras = extrasPayload(admitExtras, admitItems);
+    const amount = Number(admitForm.amount) || 0;
+    const duesIssue = mainDuesIssue(amount, 'Department dues');
+    if (duesIssue) {
+      addToast(duesIssue, 'error');
+      return;
+    }
+    if (amount <= 0 && extras.length === 0 && deptSouvenirs.length > 0) {
+      addToast(
+        'Record a payment (Department dues or an additional dues item) to give souvenirs.',
+        'error'
+      );
+      return;
+    }
     setSaving(true);
     try {
-      if (!admitForm.class_id) {
-        addToast("Pick the fresher's class/level.", 'error');
-        setSaving(false);
-        return;
-      }
-      const body = { class_id: Number(admitForm.class_id) };
-      if (Number(admitForm.amount) > 0) {
+      const body = {};
+      if (amount > 0 || extras.length > 0) {
         body.payment = {
-          amount: Number(admitForm.amount),
+          amount,
           method: admitForm.method,
           paid_at: admitForm.paid_at || undefined,
+          ...(extras.length ? { extras } : {}),
         };
       }
       if (deptSouvenirs.length > 0) {
@@ -449,9 +691,52 @@ export default function Freshers() {
     }
   };
 
-  // ─── School Admin: pre-registrations (freshers still at home) ───
-  const appPager = usePagination(applications, 10);
+  // ─── Dept Admin: record remaining department souvenirs after admission ───
+  const openDeptEdit = (f) => {
+    setDeptEditing(f);
+    setDeptEditSouvs([]);
+    setDeptGivenIds([]);
+    api
+      .get(`/students/${f.id}/souvenirs`)
+      .then((res) => {
+        const ids = asArray(res.data)
+          .filter((r) => r.level === 'department')
+          .map((r) => r.souvenir_id);
+        setDeptGivenIds(ids);
+        setDeptEditSouvs(ids);
+      })
+      .catch(() => {});
+  };
 
+  const saveDeptEdit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const newly = deptEditSouvs.filter((id) => !deptGivenIds.includes(id));
+      if (newly.length === 0) {
+        addToast('No new souvenirs selected.');
+        setDeptEditing(null);
+        return;
+      }
+      const res = await api.post(`/students/${deptEditing.id}/souvenirs`, {
+        souvenir_ids: newly,
+      });
+      const added = res.data?.added || 0;
+      addToast(
+        added > 0
+          ? `${deptEditing.name} — ${added} souvenir(s) recorded.${res.data.receipt_number ? ` Receipt ${res.data.receipt_number}.` : ''}`
+          : `${deptEditing.name} — souvenirs already recorded.`
+      );
+      setDeptEditing(null);
+      loadFreshers();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed to record souvenirs', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ─── School Admin: pre-registrations (freshers still at home) ───
   const preregLink = () => `${window.location.origin}/apply`;
 
   const copyText = async (text, what) => {
@@ -482,6 +767,7 @@ export default function Freshers() {
       paid_at: new Date().toISOString().slice(0, 10),
     });
     setVerifySouv([]);
+    setVerifyExtras({});
   };
 
   const verifyApp = async (e) => {
@@ -493,30 +779,78 @@ export default function Freshers() {
         setSaving(false);
         return;
       }
+      const emailVal = verifyForm.email.trim();
+      if (emailVal && !EMAIL_RE.test(emailVal)) {
+        addToast('Enter a valid email address, or leave Email blank.', 'error');
+        setSaving(false);
+        return;
+      }
+      // Mirror the server rule: the UA format only applies when the admin
+      // retypes the number. Free-form numbers filed via the apply form pass
+      // through unchanged.
+      const storedNo = String(verifying.student_no || '')
+        .trim()
+        .toUpperCase();
+      if (
+        verifyForm.student_no.trim().toUpperCase() !== storedNo &&
+        !STUDENT_NO_RE.test((verifyForm.student_no || '').trim())
+      ) {
+        addToast('Enter a valid reference number (e.g. UA2309264).', 'error');
+        setSaving(false);
+        return;
+      }
+      const badExtra = invalidExtra(verifyExtras, schoolItems);
+      if (badExtra) {
+        addToast(`Enter an amount above 0 for "${badExtra.name}", or untick it.`, 'error');
+        setSaving(false);
+        return;
+      }
+      const extras = extrasPayload(verifyExtras, schoolItems);
+      const duesIssue = mainDuesIssue(verifyPay.amount, 'School dues');
+      if (duesIssue) {
+        addToast(duesIssue, 'error');
+        setSaving(false);
+        return;
+      }
       const body = {
         full_name: verifyForm.name.trim(),
         student_no: verifyForm.student_no.trim(),
         phone: verifyForm.phone.trim() || undefined,
-        email: verifyForm.email.trim() || undefined,
+        email: emailVal || undefined,
         programme: verifyForm.programme.trim() || undefined,
         gender: verifyForm.gender || undefined,
         hometown: verifyForm.hometown.trim() || undefined,
         department_id: Number(verifyForm.department_id),
         admission_year: verifyForm.admission_year ? String(verifyForm.admission_year) : undefined,
       };
-      if (Number(verifyPay.amount) > 0) {
+      if (Number(verifyPay.amount) > 0 || extras.length > 0) {
         body.payment = {
-          amount: Number(verifyPay.amount),
+          amount: Number(verifyPay.amount) || 0,
           method: verifyPay.method,
           paid_at: verifyPay.paid_at || undefined,
+          ...(extras.length ? { extras } : {}),
         };
       }
       if (verifySouv.length > 0) body.souvenir_ids = verifySouv;
 
       const res = await api.post(`/freshers/${verifying.id}/verify`, body);
-      addToast(
-        `${verifyForm.name.trim()} verified and assigned to a department.${res.data.receipt_number ? ` School Dues receipt ${res.data.receipt_number}.` : ''}`
-      );
+      let msg = `${verifyForm.name.trim()} verified and assigned to a department.`;
+      if (res.data.receipt_number) {
+        msg += extras.length
+          ? ` Dues receipt ${res.data.receipt_number}.`
+          : ` School Dues receipt ${res.data.receipt_number}.`;
+      }
+      let toastType = 'success';
+      const emailInfo = res.data?.email;
+      if (emailInfo?.sent) {
+        msg += ` Receipt emailed to ${emailInfo.to || emailVal}.`;
+      } else if (emailInfo?.mode === 'dev') {
+        msg += ' Receipt recorded — email not configured.';
+      } else if (emailInfo?.to) {
+        toastType = 'error';
+        msg += ' Receipt recorded — EMAIL FAILED, student not emailed.';
+      }
+      addToast(msg, toastType);
       setVerifying(null);
       loadApps();
     } catch (err) {
@@ -529,8 +863,8 @@ export default function Freshers() {
   const deleteApp = (a) => {
     setConfirm({
       open: true,
-      title: 'Remove Pre-Registration',
-      message: `Remove ${a.full_name}'s submission? They can fill the form again if needed.`,
+      title: 'Delete Pre-Registration',
+      message: `This removes ${a.full_name}'s application entirely — use Reject to keep a record with a reason. Only delete spam submissions.`,
       danger: true,
       onConfirm: async () => {
         try {
@@ -545,10 +879,90 @@ export default function Freshers() {
     });
   };
 
-  const myClasses = classes.map((c) => ({
-    value: c.id,
-    label: c.name + (c.level !== c.name ? ` (${c.level})` : ''),
-  }));
+  // Reject (school admin only): keeps the record, stores the reason.
+  const rejectApp = (a) => {
+    const input = window.prompt(
+      `Reject ${a.full_name}'s pre-registration?\n\nEnter the reason (required) — it is kept on the record:`
+    );
+    if (input === null) return;
+    const reason = input.trim();
+    if (!reason) {
+      addToast('A reason is required to reject an application.', 'error');
+      return;
+    }
+    api
+      .patch(`/freshers/${a.id}/reject`, { reason })
+      .then(() => {
+        addToast(`${a.full_name}'s application rejected.`);
+        loadApps();
+      })
+      .catch((err) =>
+        addToast(err.response?.data?.error || 'Failed to reject application', 'error')
+      );
+  };
+
+  const isSuper = user?.role === 'super_admin';
+
+  // Super admin: edit a pending application's details before verification.
+  // Reuses the verify modal (it already allows correcting every field) but
+  // marks the session as edit-only so submitting saves without verifying.
+  const [editingApp, setEditingApp] = useState(false);
+  const editApp = (a) => {
+    openVerify(a);
+    setEditingApp(true);
+  };
+
+  const saveAppEdit = async () => {
+    if (!verifying || saving) return;
+    setSaving(true);
+    try {
+      const emailVal = verifyForm.email.trim();
+      if (emailVal && !EMAIL_RE.test(emailVal)) {
+        addToast('Enter a valid email address, or leave Email blank.', 'error');
+        setSaving(false);
+        return;
+      }
+      const res = await api.patch(`/freshers/${verifying.id}`, {
+        full_name: verifyForm.name.trim(),
+        student_no: verifyForm.student_no.trim(),
+        phone: verifyForm.phone.trim() || undefined,
+        email: emailVal || undefined,
+        programme: verifyForm.programme.trim() || undefined,
+        gender: verifyForm.gender || undefined,
+        hometown: verifyForm.hometown.trim() || undefined,
+      });
+      addToast(`${res.data.application.full_name}'s details corrected.`);
+      setVerifying(null);
+      setEditingApp(false);
+      loadApps();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Edit failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Super admin: reopen a rejected application back to pending.
+  const reopenApp = (a) => {
+    const input = window.prompt(
+      `Reopen ${a.full_name}'s application?\n\nEnter the reason (required) — it is audit-logged:`
+    );
+    if (input === null) return;
+    const reason = input.trim();
+    if (!reason) {
+      addToast('A reason is required to reopen an application.', 'error');
+      return;
+    }
+    api
+      .post(`/freshers/${a.id}/reopen`, { reason })
+      .then(() => {
+        addToast(`${a.full_name}'s application reopened to pending.`);
+        loadApps();
+      })
+      .catch((err) =>
+        addToast(err.response?.data?.error || 'Failed to reopen application', 'error')
+      );
+  };
 
   const deptOptions = depts.map((d) => ({ value: d.id, label: d.name }));
   const statusBadge = (f) => {
@@ -592,6 +1006,12 @@ export default function Freshers() {
 
       <StudentDetailsModal student={details} onClose={() => setDetails(null)} />
 
+      <ResendConfirmModal
+        student={resendTarget}
+        onClose={() => setResendTarget(null)}
+        addToast={addToast}
+      />
+
       <div className="page-head">
         <div>
           <h1>{schoolSide ? 'Freshers' : 'Admit Freshers'}</h1>
@@ -624,7 +1044,7 @@ export default function Freshers() {
               ['registered', 'Registered Freshers'],
               [
                 'prereg',
-                `Pre-Registrations${applications.length ? ` (${applications.length})` : ''}`,
+                `Pre-Registrations${preregCounts.pending ? ` (${preregCounts.pending})` : ''}`,
               ],
             ]
           : [
@@ -672,12 +1092,13 @@ export default function Freshers() {
                   />
                 </div>
                 <div className="field">
-                  <label>Reference Number</label>
+                  <label>Reference Number *</label>
                   <input
                     className="input"
                     value={studentForm.student_no}
                     onChange={(e) => setStudentForm({ ...studentForm, student_no: e.target.value })}
-                    placeholder="e.g. REF-2026-00123"
+                    placeholder="e.g. UA2309264"
+                    required
                   />
                 </div>
                 <div className="field">
@@ -789,6 +1210,35 @@ export default function Freshers() {
                     />
                   </div>
                 </div>
+                {schoolItems.length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <div className="muted text-xs fw-600 mb-sm">
+                      OTHER DUES (SCHOOL-WIDE) — tick what the fresher pays now
+                    </div>
+                    <ExtrasPicker
+                      items={schoolItems}
+                      selected={registerExtras}
+                      onToggle={toggleExtra(setRegisterExtras)}
+                      onAmount={(item, v) =>
+                        setRegisterExtras((prev) => ({ ...prev, [item.id]: v }))
+                      }
+                      disabledNote={(item) =>
+                        genderScopeNote(item.gender, studentForm.gender)
+                          ? `(${genderScopeNote(item.gender, studentForm.gender)})`
+                          : null
+                      }
+                    />
+                  </div>
+                )}
+                <div className="flex" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
+                  <span className="muted text-sm">Total due:&nbsp;</span>
+                  <strong>
+                    GHS{' '}
+                    {(
+                      (Number(schoolPayment.amount) || 0) + extrasSum(registerExtras, schoolItems)
+                    ).toFixed(2)}
+                  </strong>
+                </div>
               </div>
             )}
 
@@ -833,7 +1283,12 @@ export default function Freshers() {
               </button>
               <button
                 className="btn btn-green"
-                disabled={saving || !studentForm.name.trim() || !studentForm.department_id}
+                disabled={
+                  saving ||
+                  !studentForm.name.trim() ||
+                  !studentForm.student_no.trim() ||
+                  !studentForm.department_id
+                }
               >
                 {editing ? (
                   <>
@@ -856,7 +1311,7 @@ export default function Freshers() {
           open
           icon={<UserPlus size={20} />}
           title={`Admit ${admitting.name}`}
-          subtitle="Assign their class and record Department dues & souvenirs."
+          subtitle="Confirm admission and record Department dues & souvenirs."
           onClose={() => setAdmitting(null)}
         >
           <div className="modal-section">
@@ -864,18 +1319,12 @@ export default function Freshers() {
               <Users size={16} /> Admission Details
             </div>
             <p className="muted text-sm mb">
-              Registered by the School and assigned to {admitting.department_name}. Pick their class
-              to admit.
+              Registered by the School and assigned to {admitting.department_name}. Freshers always
+              enter at Level 100.
             </p>
             <div className="field">
-              <label>Class / Level *</label>
-              <Select
-                value={admitForm.class_id}
-                onChange={(v) => setAdmitForm({ ...admitForm, class_id: v })}
-                options={myClasses}
-                placeholder="Select class..."
-                required
-              />
+              <label>Level</label>
+              <input className="input" value="Level 100" disabled readOnly />
             </div>
           </div>
 
@@ -912,6 +1361,34 @@ export default function Freshers() {
                 />
               </div>
             </div>
+            {itemsForDept(admitting.department_id).length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div className="muted text-xs fw-600 mb-sm">
+                  OTHER DUES — your department's additional charges
+                </div>
+                <ExtrasPicker
+                  items={itemsForDept(admitting.department_id)}
+                  selected={admitExtras}
+                  onToggle={toggleExtra(setAdmitExtras)}
+                  onAmount={(item, v) => setAdmitExtras((prev) => ({ ...prev, [item.id]: v }))}
+                  disabledNote={(item) => {
+                    if (chargedExtraLabels.includes(item.name)) return '(already charged)';
+                    const genderNote = genderScopeNote(item.gender, admitting.gender);
+                    return genderNote ? `(${genderNote})` : null;
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
+              <span className="muted text-sm">Total due:&nbsp;</span>
+              <strong>
+                GHS{' '}
+                {(
+                  (Number(admitForm.amount) || 0) +
+                  extrasSum(admitExtras, itemsForDept(admitting.department_id))
+                ).toFixed(2)}
+              </strong>
+            </div>
           </div>
 
           {deptSouvenirList.length > 0 && (
@@ -944,11 +1421,7 @@ export default function Freshers() {
             <button className="btn btn-outline" onClick={() => setAdmitting(null)}>
               Cancel
             </button>
-            <button
-              className="btn btn-green"
-              onClick={admit}
-              disabled={saving || !admitForm.class_id}
-            >
+            <button className="btn btn-green" onClick={admit} disabled={saving}>
               {saving ? (
                 'Admitting...'
               ) : (
@@ -961,17 +1434,121 @@ export default function Freshers() {
         </Modal>
       )}
 
+      {/* ─── Record remaining department souvenirs (Dept Admin) ─── */}
+      {deptEditing && !schoolSide && (
+        <Modal
+          open
+          icon={<Gift size={20} />}
+          title={`Souvenirs — ${deptEditing.name}`}
+          subtitle="Record department souvenirs the student collects after admission."
+          onClose={() => setDeptEditing(null)}
+        >
+          <form onSubmit={saveDeptEdit}>
+            <div className="modal-section">
+              <div className="modal-section-title">
+                <Users size={16} /> Student
+              </div>
+              <div className="grid grid-2">
+                <div className="field">
+                  <label>Reference Number</label>
+                  <input
+                    className="input"
+                    value={deptEditing.student_no || '-'}
+                    disabled
+                    readOnly
+                  />
+                </div>
+                <div className="field">
+                  <label>Level</label>
+                  <input
+                    className="input"
+                    value={deptEditing.level ? `Level ${deptEditing.level}` : '-'}
+                    disabled
+                    readOnly
+                  />
+                </div>
+              </div>
+            </div>
+
+            {deptSouvenirList.length > 0 ? (
+              <div className="modal-section">
+                <div className="modal-section-title">
+                  <Gift size={16} /> Department Souvenirs
+                </div>
+                <p className="muted text-sm mb">
+                  Items already handed out are marked "recorded". Tick any remaining items the
+                  student collects now — a $0 souvenir receipt is issued for them.
+                </p>
+                <div className="grid grid-3">
+                  {deptSouvenirList.map((s) => {
+                    const given = deptGivenIds.includes(s.id);
+                    return (
+                      <Checkbox
+                        key={s.id}
+                        checked={deptEditSouvs.includes(s.id)}
+                        disabled={given}
+                        onChange={() =>
+                          setDeptEditSouvs((prev) =>
+                            prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]
+                          )
+                        }
+                        label={given ? `${s.name} (recorded)` : s.name}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="modal-section">
+                <p className="muted text-sm mb" style={{ marginBottom: 0 }}>
+                  No department souvenirs are configured yet — add them in Settings first.
+                </p>
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setDeptEditing(null)}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-green" disabled={saving}>
+                <Gift size={18} /> {saving ? 'Saving...' : 'Record Souvenirs'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {/* ─── Verify pre-registration modal (School Admin) ─── */}
       {verifying && schoolSide && (
         <Modal
           open
           size="wide"
           icon={<UserCheck size={20} />}
-          title={`Verify ${verifying.full_name}`}
-          subtitle="Check their details, correct anything wrong, assign a department, and record School dues & souvenirs."
-          onClose={() => setVerifying(null)}
+          title={`${editingApp ? 'Edit' : 'Verify'} ${verifying.full_name}`}
+          subtitle={
+            editingApp
+              ? 'Correct the details below — saving keeps the application pending.'
+              : 'Check their details, correct anything wrong, assign a department, and record School dues & souvenirs.'
+          }
+          onClose={() => {
+            setVerifying(null);
+            setEditingApp(false);
+          }}
         >
-          <form onSubmit={verifyApp}>
+          <form
+            onSubmit={
+              editingApp
+                ? (e) => {
+                    e.preventDefault();
+                    saveAppEdit();
+                  }
+                : verifyApp
+            }
+          >
             <div className="modal-section">
               <div className="modal-section-title">
                 <Student size={16} /> Fresher Details
@@ -992,7 +1569,7 @@ export default function Freshers() {
                     className="input"
                     value={verifyForm.student_no}
                     onChange={(e) => setVerifyForm({ ...verifyForm, student_no: e.target.value })}
-                    placeholder="e.g. REF-2026-00123"
+                    placeholder="e.g. UA2309264"
                     required
                   />
                 </div>
@@ -1055,90 +1632,148 @@ export default function Freshers() {
                   />
                 </div>
               </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Assign to Department *</label>
-                <Select
-                  value={verifyForm.department_id}
-                  onChange={(v) => setVerifyForm({ ...verifyForm, department_id: v })}
-                  options={deptOptions}
-                  placeholder="Select department..."
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="modal-section">
-              <div className="modal-section-title">
-                <CurrencyCircleDollar size={16} /> School Dues Payment
-              </div>
-              <p className="muted text-sm mb">Pre-filled and editable.</p>
-              <div className="grid grid-3">
-                <div className="field">
-                  <label>Amount (GHS)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={verifyPay.amount}
-                    onChange={(e) => setVerifyPay({ ...verifyPay, amount: e.target.value })}
-                  />
-                </div>
-                <div className="field">
-                  <label>Method</label>
+              {/* Edit mode only corrects the application details — the
+                  department, dues and souvenirs are settled at verification
+                  time, so they are hidden (and their `required` guard
+                  removed) while editing. */}
+              {!editingApp && (
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label>Assign to Department *</label>
                   <Select
-                    value={verifyPay.method}
-                    onChange={(v) => setVerifyPay({ ...verifyPay, method: v })}
-                    options={METHOD_OPTIONS}
+                    value={verifyForm.department_id}
+                    onChange={(v) => setVerifyForm({ ...verifyForm, department_id: v })}
+                    options={deptOptions}
+                    placeholder="Select department..."
+                    required
                   />
                 </div>
-                <div className="field">
-                  <label>Date</label>
-                  <DatePicker
-                    value={verifyPay.paid_at}
-                    onChange={(v) => setVerifyPay({ ...verifyPay, paid_at: v })}
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
-            {schoolSouvenirList.length > 0 && (
-              <div className="modal-section">
-                <div className="modal-section-title">
-                  <Gift size={16} /> School Souvenirs
+            {/* Dues and souvenirs are collected at verification, not when a
+                correction is saved — the edit endpoint only records the
+                applicant's own details. */}
+            {!editingApp && (
+              <>
+                <div className="modal-section">
+                  <div className="modal-section-title">
+                    <CurrencyCircleDollar size={16} /> School Dues Payment
+                  </div>
+                  <p className="muted text-sm mb">Pre-filled and editable.</p>
+                  <div className="grid grid-3">
+                    <div className="field">
+                      <label>Amount (GHS)</label>
+                      <input
+                        className="input"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={verifyPay.amount}
+                        onChange={(e) => setVerifyPay({ ...verifyPay, amount: e.target.value })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Method</label>
+                      <Select
+                        value={verifyPay.method}
+                        onChange={(v) => setVerifyPay({ ...verifyPay, method: v })}
+                        options={METHOD_OPTIONS}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Date</label>
+                      <DatePicker
+                        value={verifyPay.paid_at}
+                        onChange={(v) => setVerifyPay({ ...verifyPay, paid_at: v })}
+                      />
+                    </div>
+                  </div>
+                  {schoolItems.length > 0 && (
+                    <div style={{ marginTop: 14 }}>
+                      <div className="muted text-xs fw-600 mb-sm">
+                        OTHER DUES (SCHOOL-WIDE) — tick what the fresher pays now
+                      </div>
+                      <ExtrasPicker
+                        items={schoolItems}
+                        selected={verifyExtras}
+                        onToggle={toggleExtra(setVerifyExtras)}
+                        onAmount={(item, v) =>
+                          setVerifyExtras((prev) => ({ ...prev, [item.id]: v }))
+                        }
+                        disabledNote={(item) =>
+                          genderScopeNote(item.gender, verifyForm.gender)
+                            ? `(${genderScopeNote(item.gender, verifyForm.gender)})`
+                            : null
+                        }
+                      />
+                    </div>
+                  )}
+                  <div className="flex" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
+                    <span className="muted text-sm">Total due:&nbsp;</span>
+                    <strong>
+                      GHS{' '}
+                      {(
+                        (Number(verifyPay.amount) || 0) + extrasSum(verifyExtras, schoolItems)
+                      ).toFixed(2)}
+                    </strong>
+                  </div>
                 </div>
-                <div className="grid grid-2">
-                  {schoolSouvenirList.map((s) => (
-                    <Checkbox
-                      key={s.id}
-                      checked={verifySouv.includes(s.id)}
-                      onChange={() =>
-                        setVerifySouv((prev) =>
-                          prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]
-                        )
-                      }
-                      label={s.name}
-                    />
-                  ))}
-                </div>
-              </div>
+
+                {schoolSouvenirList.length > 0 && (
+                  <div className="modal-section">
+                    <div className="modal-section-title">
+                      <Gift size={16} /> School Souvenirs
+                    </div>
+                    <div className="grid grid-2">
+                      {schoolSouvenirList.map((s) => (
+                        <Checkbox
+                          key={s.id}
+                          checked={verifySouv.includes(s.id)}
+                          onChange={() =>
+                            setVerifySouv((prev) =>
+                              prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]
+                            )
+                          }
+                          label={s.name}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             <div className="modal-actions">
-              <button type="button" className="btn btn-outline" onClick={() => setVerifying(null)}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => {
+                  setVerifying(null);
+                  setEditingApp(false);
+                }}
+              >
                 Cancel
               </button>
-              <button
-                className="btn btn-green"
-                disabled={
-                  saving ||
-                  !verifyForm.name.trim() ||
-                  !verifyForm.student_no.trim() ||
-                  !verifyForm.department_id
-                }
-              >
-                <UserCheck size={18} /> {saving ? 'Verifying...' : 'Verify & Assign Department'}
-              </button>
+              {editingApp ? (
+                <button
+                  className="btn btn-green"
+                  disabled={saving || !verifyForm.name.trim() || !verifyForm.student_no.trim()}
+                >
+                  <Pencil size={18} /> {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-green"
+                  disabled={
+                    saving ||
+                    !verifyForm.name.trim() ||
+                    !verifyForm.student_no.trim() ||
+                    !verifyForm.department_id
+                  }
+                >
+                  <UserCheck size={18} /> {saving ? 'Verifying...' : 'Verify & Assign Department'}
+                </button>
+              )}
             </div>
           </form>
         </Modal>
@@ -1147,15 +1782,25 @@ export default function Freshers() {
       {/* ─── Registered freshers (school) / admit queue (dept) ─── */}
       {!(schoolSide && tab === 'prereg') && (
         <div className="card">
-          <div className="field" style={{ maxWidth: 400 }}>
-            <input
-              className="input search-input"
-              placeholder="Search by name or student number..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className="flex gap-sm" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="field" style={{ maxWidth: 400, flex: '1 1 260px', marginBottom: 0 }}>
+              <input
+                className="input search-input"
+                placeholder="Search by name or student number..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={downloadFreshersCsv}
+              disabled={exporting}
+              title="Download the listed freshers as CSV"
+            >
+              <DownloadSimple size={14} /> {exporting ? 'Exporting...' : 'Export CSV'}
+            </button>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" style={{ marginTop: 12 }}>
             <table className="table">
               <thead>
                 <tr>
@@ -1163,7 +1808,7 @@ export default function Freshers() {
                   <th>Student No</th>
                   <th>{schoolSide ? 'Department' : 'Status'}</th>
                   {schoolSide && <th>Status</th>}
-                  <th>Class</th>
+                  <th>Level</th>
                   <th></th>
                 </tr>
               </thead>
@@ -1209,12 +1854,31 @@ export default function Freshers() {
                           <span className={`badge ${st.cls}`}>{st.label}</span>
                         </td>
                       )}
-                      <td>{f.class_name || '-'}</td>
+                      <td>{f.level ? `Level ${f.level}` : '-'}</td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-sm">
                           {!schoolSide && !f.admitted_at && (
                             <button className="btn btn-sm btn-primary" onClick={() => openAdmit(f)}>
                               <UserPlus size={14} /> Admit
+                            </button>
+                          )}
+                          {!schoolSide && f.admitted_at && user?.role === 'dept_admin' && (
+                            <button
+                              className="btn btn-sm btn-outline"
+                              onClick={() => openDeptEdit(f)}
+                              title="Record souvenirs"
+                            >
+                              <Gift size={14} />
+                            </button>
+                          )}
+                          {!schoolSide && canResend && (
+                            <button
+                              className="btn btn-sm btn-outline"
+                              onClick={() => setResendTarget(f)}
+                              title="Review payment details and resend receipt email(s)"
+                              aria-label={`Resend receipt email to ${f.name}`}
+                            >
+                              <PaperPlaneTilt size={14} />
                             </button>
                           )}
                           {schoolSide && (
@@ -1226,6 +1890,16 @@ export default function Freshers() {
                               >
                                 <Pencil size={14} />
                               </button>
+                              {canResend && (
+                                <button
+                                  className="btn btn-sm btn-outline"
+                                  onClick={() => setResendTarget(f)}
+                                  title="Review payment details and resend receipt email(s)"
+                                  aria-label={`Resend receipt email to ${f.name}`}
+                                >
+                                  <PaperPlaneTilt size={14} />
+                                </button>
+                              )}
                               {isSchoolAdmin && (
                                 <button
                                   className="btn btn-sm btn-danger"
@@ -1271,30 +1945,36 @@ export default function Freshers() {
                 >
                   <Copy size={14} /> Copy link
                 </button>
-                {accessCode && (
-                  <>
-                    <span className="muted text-sm">access code:</span>
-                    <span className="code-cell">{accessCode}</span>
-                    <button
-                      className="btn btn-ghost btn-xs"
-                      onClick={() => copyText(accessCode, 'Access code')}
-                      title="Copy access code"
-                    >
-                      <Copy size={13} />
-                    </button>
-                  </>
-                )}
               </div>
             </div>
           )}
 
-          <div className="field" style={{ maxWidth: 400 }}>
-            <input
-              className="input search-input"
-              placeholder="Search submissions by name or student number..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className="flex align-center gap-sm mb" style={{ flexWrap: 'wrap' }}>
+            <div className="tabs" style={{ marginBottom: 0 }}>
+              {[
+                ['pending', `Pending${preregCounts.pending ? ` (${preregCounts.pending})` : ''}`],
+                [
+                  'rejected',
+                  `Rejected${preregCounts.rejected ? ` (${preregCounts.rejected})` : ''}`,
+                ],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  className={`tab-btn ${preregTab === key ? 'active' : ''}`}
+                  onClick={() => setPreregTab(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="field" style={{ maxWidth: 360, marginBottom: 0, flex: '1 1 240px' }}>
+              <input
+                className="input search-input"
+                placeholder="Search submissions by name or student number..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="table-wrap">
@@ -1306,36 +1986,71 @@ export default function Freshers() {
                   <th>Programme</th>
                   <th>Phone</th>
                   <th>Submitted</th>
+                  {preregTab === 'rejected' && <th>Reason</th>}
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {appPager.slice.length === 0 && (
+                {applications.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="muted">
-                      No pre-registrations yet. Share the form link above with incoming freshers.
+                    <td colSpan={preregTab === 'rejected' ? 7 : 6} className="muted">
+                      {preregTab === 'rejected'
+                        ? 'No rejected applications.'
+                        : 'No pre-registrations yet. Share the form link above with incoming freshers.'}
                     </td>
                   </tr>
                 )}
-                {appPager.slice.map((a) => (
+                {applications.map((a) => (
                   <tr key={a.id}>
                     <td className="fw-600">{a.full_name}</td>
                     <td>{a.student_no || '-'}</td>
                     <td>{a.programme || '-'}</td>
                     <td>{a.phone || '-'}</td>
                     <td>{new Date(a.created_at).toLocaleDateString()}</td>
+                    {preregTab === 'rejected' && <td>{a.rejection_reason || '-'}</td>}
                     <td>
                       <div className="flex gap-sm">
-                        <button className="btn btn-sm btn-primary" onClick={() => openVerify(a)}>
-                          <UserCheck size={14} /> Verify
-                        </button>
-                        <button
-                          className="btn btn-sm btn-danger"
-                          onClick={() => deleteApp(a)}
-                          title="Remove submission"
-                        >
-                          <Trash size={14} />
-                        </button>
+                        {preregTab === 'pending' && (
+                          <button className="btn btn-sm btn-primary" onClick={() => openVerify(a)}>
+                            <UserCheck size={14} /> Verify
+                          </button>
+                        )}
+                        {isSuper && preregTab === 'pending' && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => editApp(a)}
+                            title="Correct details before verification"
+                          >
+                            <Pencil size={14} /> Edit
+                          </button>
+                        )}
+                        {isSuper && preregTab === 'rejected' && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => reopenApp(a)}
+                            title="Reopen back to pending"
+                          >
+                            <UserCheck size={14} /> Reopen
+                          </button>
+                        )}
+                        {isSchoolAdmin && preregTab === 'pending' && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => rejectApp(a)}
+                            title="Reject with a reason"
+                          >
+                            <UserMinus size={14} /> Reject
+                          </button>
+                        )}
+                        {isSchoolAdmin && (
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => deleteApp(a)}
+                            title="Delete submission (spam only)"
+                          >
+                            <Trash size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1344,11 +2059,11 @@ export default function Freshers() {
             </table>
           </div>
           <Pagination
-            page={appPager.page}
-            totalPages={appPager.totalPages}
-            onPageChange={appPager.setPage}
-            totalItems={appPager.totalItems}
-            pageSize={appPager.perPage}
+            page={appsPage}
+            totalPages={Math.max(1, Math.ceil(appsTotal / APP_PAGE_SIZE))}
+            onPageChange={setAppsPage}
+            totalItems={appsTotal}
+            pageSize={APP_PAGE_SIZE}
           />
         </div>
       )}

@@ -1,0 +1,2 @@
+import './staff-access-sign-in.css';
+export default function StaffAccessSignIn({appId}){return <div className="staff-access-alternative"><div className="staff-access-divider" aria-hidden="true">or</div><a className="staff-access-link" href={'/api/auth/staff-sso/'+appId+'/login'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 4 5 7 8 9 3-2 8-5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>Sign in with Staff Access</span></a></div>;}

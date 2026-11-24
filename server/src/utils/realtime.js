@@ -24,11 +24,13 @@ function initIO(server) {
     maxHttpBufferSize: 1e6,
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.token;
       if (!token) return next();
       const payload = jwt.verify(token, process.env.JWT_SECRET);
+      if(payload.sso_sid){const user=await require('../services/staff-sso').authenticate(payload.sso_sid);if(!user)return next(new Error('Staff Access permission has ended.'));socket.staffSsoId=payload.sso_sid;socket.user=user;return next();}
+      if(process.env.STAFF_SSO_ENABLED==='true'&&await require('../services/staff-sso').linked(payload.id))return next(new Error('Use Staff Access.'));
       socket.user = {
         id: payload.id,
         role: payload.role,
@@ -59,12 +61,6 @@ function getIO() {
  *  - school admins always receive it
  *  - if payload.department_id is set, that department's admins receive it too
  */
-function emitEvent(type, payload = {}) {
-  if (!io) return;
-  io.to('school').emit(type, payload);
-  if (payload.department_id) {
-    io.to(`dept-${payload.department_id}`).emit(type, payload);
-  }
-}
+async function emitEvent(type,payload={}){if(!io)return;for(const socket of io.sockets.sockets.values()){let user=socket.user;if(socket.staffSsoId){user=await require('../services/staff-sso').authenticate(socket.staffSsoId);if(!user){socket.disconnect(true);continue;}}if(user&&(user.role==='school_admin'||user.role==='super_admin'||user.role==='dept_admin'&&String(user.department_id)===String(payload.department_id)))socket.emit(type,payload);}}
 
 module.exports = { initIO, getIO, emitEvent };

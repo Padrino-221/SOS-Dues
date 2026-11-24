@@ -5,3 +5,5 @@ dist/
 .DS_Store
 server/.env
 client/.env
+backups/
+deploy/

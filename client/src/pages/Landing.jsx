@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, UserCircle } from '@phosphor-icons/react';
+import { IconArrowRight as ArrowRight, IconUserCircle as UserCircle, IconBackpack as Student, IconLock as Lock } from '@tabler/icons-react';
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -29,79 +29,123 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* Hero */}
+      {/* Hero + journey doors */}
       <main className="pub-main">
-        <section className="pub-hero">
-          <div className="pub-copy">
+        <section className="pub-hero" style={{ gridTemplateColumns: '1fr', gap: 32 }}>
+          <div className="pub-copy" style={{ maxWidth: 640 }}>
             <p className="pub-eyebrow">Dues Management</p>
-            <h1>Collect dues in seconds.</h1>
+            <h1>Everything in one place.</h1>
             <p className="pub-lead">
-              Class reps collect school and department dues, and every payment gets a receipt.
+              Fresher pre-registration, class-rep dues collection with instant receipts, and the
+              school admin workspace — pick the door that fits you.
             </p>
-            <ol className="pub-how">
-              <li>
-                <span className="pub-step-num">1</span>
-                <div>
-                  <strong>Enter the department code</strong>
-                  <p>Ask your department admin for it.</p>
-                </div>
-              </li>
-              <li>
-                <span className="pub-step-num">2</span>
-                <div>
-                  <strong>Choose the class and student</strong>
-                  <p>See what they still owe.</p>
-                </div>
-              </li>
-              <li>
-                <span className="pub-step-num">3</span>
-                <div>
-                  <strong>Record the payment</strong>
-                  <p>A receipt is issued right away.</p>
-                </div>
-              </li>
-            </ol>
           </div>
 
-          {/* Access panel */}
-          <aside className="pub-panel">
-            <div className="pub-panel-head">
-              <span className="pub-panel-icon">
-                <UserCircle size={26} weight="regular" />
-              </span>
-              <div>
-                <h2>Class Representative</h2>
-                <p>Collect dues for your class</p>
+          {/* Three journey cards — stack cleanly on phones */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: 20,
+              alignItems: 'stretch',
+            }}
+          >
+            {/* Door 1: fresher pre-registration */}
+            <aside
+              className="pub-panel"
+              style={{ padding: '26px 24px', display: 'flex', flexDirection: 'column' }}
+            >
+              <div className="pub-panel-head">
+                <span className="pub-panel-icon">
+                  <Student size={26} />
+                </span>
+                <div>
+                  <h2>I'm a fresher</h2>
+                  <p>Pre-register before reporting day</p>
+                </div>
               </div>
-            </div>
-
-            <form onSubmit={goToRep}>
-              <div className="field">
-                <label>Department access code</label>
-                <input
-                  className="input pub-code-input"
-                  placeholder="e.g. CS"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  autoCapitalize="characters"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-              </div>
-              {error && <div className="alert alert-error">{error}</div>}
-              <button className="btn btn-primary btn-lg w-full pub-cta">
-                Continue <ArrowRight size={20} weight="bold" />
+              <p className="muted text-sm" style={{ flex: 1, lineHeight: 1.6 }}>
+                Fill in your details once from home. On reporting day, bring your admission
+                documents — we verify you and assign your department.
+              </p>
+              <button
+                className="btn btn-primary btn-lg w-full pub-cta"
+                onClick={() => navigate('/apply')}
+              >
+                Pre-register <ArrowRight size={20} stroke={2.5} />
               </button>
-            </form>
+              <p className="pub-panel-note">No payment needed now.</p>
+            </aside>
 
-            <p className="pub-panel-note">
-              PIN-protected recording.
-            </p>
+            {/* Door 2: class representative (existing code panel) */}
+            <aside
+              className="pub-panel"
+              style={{ padding: '26px 24px', display: 'flex', flexDirection: 'column' }}
+            >
+              <div className="pub-panel-head">
+                <span className="pub-panel-icon">
+                  <UserCircle size={26} />
+                </span>
+                <div>
+                  <h2>I'm a class representative</h2>
+                  <p>Collect dues for your class</p>
+                </div>
+              </div>
 
-            <p className="pub-panel-note" style={{ marginTop: 12 }}>
-              <Link to="/records">Student? View your payment records</Link>
-            </p>
-          </aside>
+              <form onSubmit={goToRep} style={{ flex: 1 }}>
+                <div className="field">
+                  <label>Department access code</label>
+                  <input
+                    className="input pub-code-input"
+                    placeholder="e.g. CS"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    maxLength={24}
+                  />
+                </div>
+                {error && <div className="alert alert-error">{error}</div>}
+                <button className="btn btn-primary btn-lg w-full pub-cta">
+                  Continue <ArrowRight size={20} stroke={2.5} />
+                </button>
+              </form>
+
+              <p className="pub-panel-note">PIN-protected recording.</p>
+            </aside>
+
+            {/* Door 3: school admin */}
+            <aside
+              className="pub-panel"
+              style={{ padding: '26px 24px', display: 'flex', flexDirection: 'column' }}
+            >
+              <div className="pub-panel-head">
+                <span className="pub-panel-icon">
+                  <Lock size={26} />
+                </span>
+                <div>
+                  <h2>School admin</h2>
+                  <p>Manage freshers, receipts & reports</p>
+                </div>
+              </div>
+              <p className="muted text-sm" style={{ flex: 1, lineHeight: 1.6 }}>
+                Verify freshers at reporting day, record school & department dues, and keep every
+                payment on record.
+              </p>
+              <button
+                className="btn btn-outline btn-lg w-full pub-cta"
+                onClick={() => navigate('/login')}
+              >
+                Sign in <ArrowRight size={20} stroke={2.5} />
+              </button>
+              <p className="pub-panel-note">Admin access only.</p>
+            </aside>
+          </div>
+
+          <p className="pub-panel-note" style={{ marginTop: 20 }}>
+            <Link to="/records">Student? View your payment records</Link>
+          </p>
         </section>
       </main>
 

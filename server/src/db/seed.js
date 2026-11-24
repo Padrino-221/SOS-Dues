@@ -1,13 +1,14 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const pool = require('./pool');
 const { ensureDatabase } = require('./setup');
 const { resolveAcademicYear } = require('../utils/academicYear');
 
 // v2 seed — clears every data table and rebuilds a full, realistic demo set:
-// departments + PINs, classes, souvenirs, staff accounts, continuing students,
-// freshers (pending admission and admitted), pre-registration applications,
-// itemized receipts/payments spread over recent months, souvenirs handed out,
-// and an audit trail.
+// departments + PINs, souvenirs, staff accounts, free-flow payment
+// records (payer name + index number snapshotted on each receipt, no roster
+// rows), freshers (pending admission and admitted), pre-registration
+// applications, souvenirs handed out, and an audit trail.
 //
 // Run with `npm run db:setup` (drops + recreates the schema) followed by
 // `npm run db:seed`, or `npm run setup` from the project root for both.
@@ -35,15 +36,10 @@ const UNIV_DEPT_ID = {
 };
 const PROGRAM_LETTER = 'B';
 
-const CLASSES = {
-  'Computer Science': ['Level 100 A', 'Level 100 B', 'Level 200', 'Level 300'],
-  Mathematics: ['Level 100', 'Level 200', 'Level 300'],
-  Biology: ['Level 100', 'Level 200', 'Level 300'],
-  Chemistry: ['Level 100', 'Level 200', 'Level 300'],
-  Physics: ['Level 100', 'Level 200', 'Level 300'],
-};
-
-const CONTINUING = {
+// Continuing-student payers: names typed at the desk, level chosen at
+// collection. There is NO roster row for these — the money lives in receipts
+// carrying the snapshot (name, index number, level).
+const PAYERS = {
   'Computer Science': {
     100: ['Jeremy Adjei', 'Joyce Antwi', 'Kevin Nitamoah', 'Linda Boakye'],
     200: ['Michael Asiedu', 'Naomi Sarpong', 'Obed Kwame'],
@@ -88,16 +84,71 @@ const ADMITTED_FRESHERS = {
 };
 
 const APPLICATIONS = [
-  { full_name: 'Kwabena Nkrumah', student_no: 'UA2601001', programme: 'BSc. Computer Science', gender: 'Male', hometown: 'Kumasi', phone: '024 000 0001', email: 'kwabena.nkrumah@example.com' },
-  { full_name: 'Godfred Amoah', student_no: 'UA2601002', programme: 'BSc. Mathematics', gender: 'Male', hometown: 'Sunyani', phone: '024 000 0002', email: 'godfred.amoah@example.com' },
-  { full_name: 'Sandra Yeboah', student_no: 'UA2601003', programme: 'BSc. Biology', gender: 'Female', hometown: 'Accra', phone: '024 000 0003', email: 'sandra.yeboah@example.com' },
-  { full_name: 'Francis Oduro', student_no: 'UA2601004', programme: 'BSc. Chemistry', gender: 'Male', hometown: 'Takoradi', phone: '024 000 0004', email: 'francis.oduro@example.com' },
-  { full_name: 'Naomi Adjei', student_no: 'UA2601005', programme: 'BSc. Physics', gender: 'Female', hometown: 'Tamale', phone: '024 000 0005', email: 'naomi.adjei@example.com' },
-  { full_name: 'Victor Danso', student_no: 'UA2601006', programme: 'BSc. Computer Science', gender: 'Male', hometown: 'Cape Coast', phone: '024 000 0006', email: 'victor.danso@example.com' },
+  {
+    full_name: 'Kwabena Nkrumah',
+    student_no: 'UA2601001',
+    programme: 'BSc. Computer Science',
+    gender: 'Male',
+    hometown: 'Kumasi',
+    phone: '024 000 0001',
+    email: 'kwabena.nkrumah@example.com',
+  },
+  {
+    full_name: 'Godfred Amoah',
+    student_no: 'UA2601002',
+    programme: 'BSc. Mathematics',
+    gender: 'Male',
+    hometown: 'Sunyani',
+    phone: '024 000 0002',
+    email: 'godfred.amoah@example.com',
+  },
+  {
+    full_name: 'Sandra Yeboah',
+    student_no: 'UA2601003',
+    programme: 'BSc. Biology',
+    gender: 'Female',
+    hometown: 'Accra',
+    phone: '024 000 0003',
+    email: 'sandra.yeboah@example.com',
+  },
+  {
+    full_name: 'Francis Oduro',
+    student_no: 'UA2601004',
+    programme: 'BSc. Chemistry',
+    gender: 'Male',
+    hometown: 'Takoradi',
+    phone: '024 000 0004',
+    email: 'francis.oduro@example.com',
+  },
+  {
+    full_name: 'Naomi Adjei',
+    student_no: 'UA2601005',
+    programme: 'BSc. Physics',
+    gender: 'Female',
+    hometown: 'Tamale',
+    phone: '024 000 0005',
+    email: 'naomi.adjei@example.com',
+  },
+  {
+    full_name: 'Victor Danso',
+    student_no: 'UA2601006',
+    programme: 'BSc. Computer Science',
+    gender: 'Male',
+    hometown: 'Cape Coast',
+    phone: '024 000 0006',
+    email: 'victor.danso@example.com',
+  },
 ];
 
 const HOMETOWNS = [
-  'Sunyani', 'Kumasi', 'Accra', 'Takoradi', 'Tamale', 'Cape Coast', 'Ho', 'Koforidua',
+  'Sunyani',
+  'Kumasi',
+  'Accra',
+  'Takoradi',
+  'Tamale',
+  'Cape Coast',
+  'Ho',
+  'Koforidua',
 ];
 
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -108,21 +159,16 @@ function paidAtFor(i) {
   return new Date(now.getFullYear(), now.getMonth() - (i % 6), 2 + (i % 24), 9, 30, 0, 0);
 }
 
-function classFor(deptName, level, counter) {
-  if (deptName === 'Computer Science' && Number(level) === 100) {
-    return counter % 2 === 0 ? 'Level 100 A' : 'Level 100 B';
-  }
-  return `Level ${level}`;
-}
-
 async function seed() {
   await ensureDatabase();
 
   const client = await pool.connect();
 
-  // University-issued student numbers and the per-student receipt counter.
+  // University-issued student numbers and the per-index lifetime receipt
+  // counter (one shared sequence across every receipt type, mirroring the
+  // server's reserveReceiptNumber).
   const deptSeq = {}; // deptName -> last used sequence
-  const receiptSeqByStudent = new Map(); // studentId -> last receipt counter
+  const seqByIndex = new Map(); // index number -> receipts issued so far
   const makeStudentNo = (deptName, enrollYear) => {
     deptSeq[deptName] = (deptSeq[deptName] || 0) + 1;
     const id = String(UNIV_DEPT_ID[deptName]).padStart(2, '0');
@@ -130,21 +176,24 @@ async function seed() {
     const yr = String(enrollYear).slice(-2).padStart(2, '0');
     return `UE${PROGRAM_LETTER}${id}${seq}${yr}`;
   };
-  const receiptNumberFor = (studentId, studentNo, tag) => {
-    const n = (receiptSeqByStudent.get(studentId) || 0) + 1;
-    receiptSeqByStudent.set(studentId, n);
-    return `SOS-DUES-${tag}-${studentNo}-${n}`;
+  const receiptNumberFor = (studentNo, tag) => {
+    const no = String(studentNo).trim().toUpperCase();
+    const n = (seqByIndex.get(no) || 0) + 1;
+    seqByIndex.set(no, n);
+    return `SOS-DUES-${tag}-${no}-${n}`;
   };
 
   const addReceipt = async ({
     receiptNumber,
     studentId,
+    studentName = null,
+    studentNo = null,
+    level = null,
     method,
     paidAt,
     recordType,
     recordedBy,
     departmentId,
-    classId,
     lines,
     voided = false,
   }) => {
@@ -152,20 +201,23 @@ async function seed() {
     const voidedAt = voided ? paidAt : null;
     const { rows } = await client.query(
       `INSERT INTO receipts
-         (receipt_number, student_id, method, paid_at, academic_year, record_type,
-          recorded_by, department_id, class_id, total_amount, voided_at, voided_by, void_reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         (receipt_number, student_id, student_name, student_no, level, method, paid_at,
+          academic_year, record_type, recorded_by, department_id, total_amount,
+          voided_at, voided_by, void_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING id`,
       [
         receiptNumber,
         studentId,
+        studentName,
+        studentNo,
+        level,
         method,
         paidAt,
         ACTIVE_YEAR,
         recordType,
         recordedBy,
         departmentId,
-        classId,
         total,
         voidedAt,
         voided ? recordedBy : null,
@@ -176,14 +228,13 @@ async function seed() {
     for (const line of lines) {
       await client.query(
         `INSERT INTO payments
-           (receipt_id, type, amount, department_id, class_id, voided_at, voided_by, void_reason)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+           (receipt_id, type, amount, department_id, voided_at, voided_by, void_reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         [
           receiptId,
           line.type,
           line.amount,
           line.department_id ?? null,
-          line.class_id ?? null,
           voidedAt,
           voided ? recordedBy : null,
           voided ? 'Duplicate entry — corrected at the desk' : null,
@@ -200,13 +251,30 @@ async function seed() {
       [adminId, role, type, description, meta ? JSON.stringify(meta) : null]
     );
 
+  // The super admin inherits every school-admin power plus the five
+  // privileged actions (resend receipts, correct/reopen applications,
+  // force-delete a student, and manage super-admin accounts).
+  //
+  // SECURITY: the seed is a demo/first-run tool, and the deploy notes tell
+  // operators to run it once on a fresh production database. A hardcoded
+  // super-admin password would therefore publish a known-password account
+  // with force-delete and account-management powers. In production the
+  // password is generated randomly (or taken from SUPER_ADMIN_PASSWORD);
+  // in local dev the familiar default is kept for convenience.
+  const isProd = process.env.NODE_ENV === 'production';
+  const superPassword = (process.env.SUPER_ADMIN_PASSWORD || '').trim() || (
+    isProd ? crypto.randomBytes(12).toString('base64url') : 'super1234'
+  );
+  const superEmail = (process.env.SUPER_ADMIN_EMAIL || 'superadmin@sosuenr.com').trim();
+  const superHash = await bcrypt.hash(superPassword, 10);
+
   try {
     await client.query('BEGIN');
 
     // ── Clean slate ──
     await client.query(
       `TRUNCATE transaction_log, student_souvenirs, payments, receipts,
-                fresher_applications, souvenirs, students, classes, users,
+                fresher_applications, souvenirs, students, users,
                 departments, settings RESTART IDENTITY CASCADE`
     );
 
@@ -214,7 +282,6 @@ async function seed() {
     await client.query(
       `INSERT INTO settings (key, value) VALUES
          ('school_dues_amount', '50'),
-         ('fresher_access_code', 'UENR2026'),
          ('active_academic_year', $1)`,
       [ACTIVE_YEAR]
     );
@@ -233,47 +300,26 @@ async function seed() {
       deptDues[d.name] = d.dues;
     }
 
-    // ── Classes ──
-    const classIds = {};
-    for (const [deptName, classNames] of Object.entries(CLASSES)) {
-      classIds[deptName] = {};
-      for (const className of classNames) {
-        const level = className.split(' ').slice(0, 2).join(' ');
-        const { rows } = await client.query(
-          `INSERT INTO classes (department_id, level, name) VALUES ($1,$2,$3) RETURNING id`,
-          [deptIds[deptName], level, className]
-        );
-        classIds[deptName][className] = rows[0].id;
-      }
-    }
+    // ── Classes are gone: students and payments carry the level only ──
 
     // ── Souvenirs ──
     const schoolSouvenirIds = [];
-    for (const s of [
-      { name: 'School T-Shirt', cost: 10 },
-      { name: 'School Cap', cost: 8 },
-      { name: 'School Mug', cost: 6 },
-      { name: 'School ID Holder', cost: 3 },
-    ]) {
+    for (const name of ['School T-Shirt', 'School Cap', 'School Mug', 'School ID Holder']) {
       const { rows } = await client.query(
-        `INSERT INTO souvenirs (name, category, department_id, cost)
-         VALUES ($1,'school',NULL,$2) RETURNING id`,
-        [s.name, s.cost]
+        `INSERT INTO souvenirs (name, category, department_id)
+         VALUES ($1,'school',NULL) RETURNING id`,
+        [name]
       );
       schoolSouvenirIds.push(rows[0].id);
     }
     const deptSouvenirIds = {};
     for (const [deptName, deptId] of Object.entries(deptIds)) {
       deptSouvenirIds[deptName] = [];
-      for (const t of [
-        { name: 'Departmental Pen', cost: 2 },
-        { name: 'Departmental Sticker', cost: 1 },
-        { name: 'Departmental Notebook', cost: 5 },
-      ]) {
+      for (const t of ['Departmental Pen', 'Departmental Sticker', 'Departmental Notebook']) {
         const { rows } = await client.query(
-          `INSERT INTO souvenirs (name, category, department_id, cost)
-           VALUES ($1,'department',$2,$3) RETURNING id`,
-          [`${deptName} ${t.name}`, deptId, t.cost]
+          `INSERT INTO souvenirs (name, category, department_id)
+           VALUES ($1,'department',$2) RETURNING id`,
+          [`${deptName} ${t}`, deptId]
         );
         deptSouvenirIds[deptName].push(rows[0].id);
       }
@@ -291,6 +337,15 @@ async function seed() {
         [schoolHash]
       )
     ).rows[0].id;
+
+    // The super admin inherits every school-admin power plus the five
+    // privileged actions (resend receipts, correct/reopen applications,
+    // force-delete a student, and manage super-admin accounts).
+    await client.query(
+      `INSERT INTO users (name, email, password_hash, role)
+       VALUES ('Super Admin',$1,$2,'super_admin')`,
+      [superEmail, superHash]
+    );
 
     await client.query(
       `INSERT INTO users (name, email, password_hash, role)
@@ -314,47 +369,19 @@ async function seed() {
       [staffHash, deptIds['Computer Science']]
     );
 
-    // ── Continuing students + their collections ──
+    // ── Free-flow payments from continuing students ──
+    // No roster rows exist for continuing students — each payer appears only
+    // as the snapshot (name, index number, level) on their receipts.
     let globalIdx = 0;
-    for (const [deptName, levels] of Object.entries(CONTINUING)) {
+    for (const [deptName, levels] of Object.entries(PAYERS)) {
       const deptId = deptIds[deptName];
       const dues = deptDues[deptName];
-      let counter = 0;
 
       for (const [levelStr, names] of Object.entries(levels)) {
         const level = String(levelStr);
         for (const name of names) {
-          counter += 1;
-          const className = classFor(deptName, level, counter);
-          const classId = classIds[deptName][className];
           const admissionYear = String(YEAR_START - (Number(level) / 100 - 1));
           const studentNo = makeStudentNo(deptName, admissionYear);
-          const email = `${name.toLowerCase().replace(/\s+/g, '.')}.${studentNo.toLowerCase()}@example.com`;
-          const phone = `02${String(4000000 + globalIdx).slice(0, 7)}`;
-          const gender = globalIdx % 2 === 0 ? 'Female' : 'Male';
-          const hometown = HOMETOWNS[globalIdx % HOMETOWNS.length];
-
-          const { rows } = await client.query(
-            `INSERT INTO students
-               (name, student_no, is_fresher, level, department_id, class_id, admission_year,
-                phone, email, programme, gender, hometown, admitted_at, created_by)
-             VALUES ($1,$2,false,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12) RETURNING id`,
-            [
-              name,
-              studentNo,
-              level,
-              deptId,
-              classId,
-              admissionYear,
-              phone,
-              email,
-              `BSc. ${deptName}`,
-              gender,
-              hometown,
-              deptAdminId[deptName],
-            ]
-          );
-          const studentId = rows[0].id;
 
           // Payment scenarios cycle so every state appears in the UI.
           const scenario = globalIdx % 5;
@@ -367,7 +394,7 @@ async function seed() {
           if (scenario === 1) {
             lines.push(
               { type: 'school_dues', amount: 50 },
-              { type: 'department_dues', amount: dues, department_id: deptId, class_id: classId }
+              { type: 'department_dues', amount: dues, department_id: deptId }
             );
           } else if (scenario === 2) {
             lines.push({ type: 'school_dues', amount: 50 });
@@ -376,7 +403,6 @@ async function seed() {
               type: 'department_dues',
               amount: dues,
               department_id: deptId,
-              class_id: classId,
             });
           } else if (scenario === 4) {
             lines.push(
@@ -385,7 +411,6 @@ async function seed() {
                 type: 'department_dues',
                 amount: Math.round(dues / 2),
                 department_id: deptId,
-                class_id: classId,
               }
             );
           }
@@ -393,17 +418,19 @@ async function seed() {
           if (lines.length) {
             const voided = globalIdx % 23 === 0;
             const tag =
-              lines.length > 1 ? 'DUES' : lines[0].type === 'school_dues' ? 'SCH' : 'DEPT';
-            const receiptNumber = receiptNumberFor(studentId, studentNo, tag);
+              lines.length > 1 ? 'FULL' : lines[0].type === 'school_dues' ? 'SCH' : 'DEPT';
+            const receiptNumber = receiptNumberFor(studentNo, tag);
             await addReceipt({
               receiptNumber,
-              studentId,
+              studentId: null,
+              studentName: name,
+              studentNo,
+              level,
               method,
               paidAt: when,
               recordType,
               recordedBy,
               departmentId: deptId,
-              classId,
               lines,
               voided,
             });
@@ -413,7 +440,13 @@ async function seed() {
                 recordType === 'admin' ? 'DEPT_ADMIN' : 'REP',
                 'payment',
                 `${recordType === 'admin' ? 'Recorded' : 'Class rep recorded'} dues for ${name} (${receiptNumber})`,
-                { student_id: studentId, receipt_number: receiptNumber, lines }
+                {
+                  student_id: null,
+                  student_no: studentNo,
+                  level,
+                  receipt_number: receiptNumber,
+                  lines,
+                }
               );
             }
           }
@@ -450,20 +483,24 @@ async function seed() {
         const when = paidAtFor(globalIdx);
 
         const receiptId = await addReceipt({
-          receiptNumber: receiptNumberFor(studentId, studentNo, 'SCH'),
+          receiptNumber: receiptNumberFor(studentNo, 'SCH'),
           studentId,
           method: globalIdx % 2 ? 'momo' : 'cash',
           paidAt: when,
           recordType: 'admin',
           recordedBy: schoolAdmin,
           departmentId: deptId,
-          classId: null,
           lines: [{ type: 'school_dues', amount: 50 }],
         });
         await client.query(
           `INSERT INTO student_souvenirs (student_id, souvenir_id, receipt_id, level, given_by)
            VALUES ($1,$2,$3,'school',$4)`,
-          [studentId, schoolSouvenirIds[globalIdx % schoolSouvenirIds.length], receiptId, schoolAdmin]
+          [
+            studentId,
+            schoolSouvenirIds[globalIdx % schoolSouvenirIds.length],
+            receiptId,
+            schoolAdmin,
+          ]
         );
         await logAudit(
           schoolAdmin,
@@ -482,18 +519,15 @@ async function seed() {
       for (const name of names) {
         globalIdx += 1;
         const studentNo = makeStudentNo(deptName, YEAR_START);
-        const className = deptName === 'Computer Science' ? 'Level 100 A' : 'Level 100';
-        const classId = classIds[deptName][className];
         const { rows } = await client.query(
           `INSERT INTO students
-             (name, student_no, is_fresher, level, department_id, class_id, admission_year,
+             (name, student_no, is_fresher, level, department_id, admission_year,
               phone, email, programme, gender, hometown, admitted_at, admitted_by, created_by)
-           VALUES ($1,$2,true,'100',$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,$12) RETURNING id`,
+           VALUES ($1,$2,true,'100',$3,$4,$5,$6,$7,$8,$9,NOW(),$10,$11) RETURNING id`,
           [
             name,
             studentNo,
             deptId,
-            classId,
             String(YEAR_START),
             `02${String(5000000 + globalIdx).slice(0, 7)}`,
             `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
@@ -508,35 +542,36 @@ async function seed() {
 
         // 1) School registration (School dues + school souvenir)
         const schoolReceipt = await addReceipt({
-          receiptNumber: receiptNumberFor(studentId, studentNo, 'SCH'),
+          receiptNumber: receiptNumberFor(studentNo, 'SCH'),
           studentId,
           method: 'cash',
           paidAt: paidAtFor(globalIdx),
           recordType: 'admin',
           recordedBy: schoolAdmin,
           departmentId: deptId,
-          classId: null,
           lines: [{ type: 'school_dues', amount: 50 }],
         });
         await client.query(
           `INSERT INTO student_souvenirs (student_id, souvenir_id, receipt_id, level, given_by)
            VALUES ($1,$2,$3,'school',$4)`,
-          [studentId, schoolSouvenirIds[globalIdx % schoolSouvenirIds.length], schoolReceipt, schoolAdmin]
+          [
+            studentId,
+            schoolSouvenirIds[globalIdx % schoolSouvenirIds.length],
+            schoolReceipt,
+            schoolAdmin,
+          ]
         );
 
         // 2) Department admission (Department dues + department souvenir)
         const deptReceipt = await addReceipt({
-          receiptNumber: receiptNumberFor(studentId, studentNo, 'DEPT'),
+          receiptNumber: receiptNumberFor(studentNo, 'DEPT'),
           studentId,
           method: globalIdx % 2 ? 'momo' : 'cash',
           paidAt: paidAtFor(globalIdx),
           recordType: 'admin',
           recordedBy: deptAdminId[deptName],
           departmentId: deptId,
-          classId,
-          lines: [
-            { type: 'department_dues', amount: dues, department_id: deptId, class_id: classId },
-          ],
+          lines: [{ type: 'department_dues', amount: dues, department_id: deptId }],
         });
         await client.query(
           `INSERT INTO student_souvenirs (student_id, souvenir_id, receipt_id, level, given_by)
@@ -552,29 +587,11 @@ async function seed() {
           deptAdminId[deptName],
           'DEPT_ADMIN',
           'fresher_admit',
-          `Admitted fresher ${name} (${studentNo}) into ${className}`,
-          { student_id: studentId, department_id: deptId, class_id: classId }
+          `Admitted fresher ${name} (${studentNo})`,
+          { student_id: studentId, department_id: deptId }
         );
       }
     }
-
-    // ── One archived and one graduated student (for the list filters) ──
-    const archivedNo = makeStudentNo('Computer Science', YEAR_START);
-    await client.query(
-      `INSERT INTO students
-         (name, student_no, is_fresher, level, is_archived, department_id, admission_year,
-          programme, gender, hometown, admitted_at, created_by)
-       VALUES ('Daniel Osei',$1,false,'100',true,$2,$3,'BSc. Computer Science','Male','Sunyani',NOW(),$4)`,
-      [archivedNo, deptIds['Computer Science'], String(YEAR_START), deptAdminId['Computer Science']]
-    );
-    const graduatedNo = makeStudentNo('Computer Science', YEAR_START - 3);
-    await client.query(
-      `INSERT INTO students
-         (name, student_no, is_fresher, level, is_graduated, department_id, admission_year,
-          programme, gender, hometown, admitted_at, created_by)
-       VALUES ('Priscilla Owusu',$1,false,'400',true,$2,$3,'BSc. Computer Science','Female','Accra',NOW(),$4)`,
-      [graduatedNo, deptIds['Computer Science'], String(YEAR_START - 3), deptAdminId['Computer Science']]
-    );
 
     // ── Fresher pre-registration applications (pending, filled from home) ──
     for (const a of APPLICATIONS) {
@@ -582,7 +599,16 @@ async function seed() {
         `INSERT INTO fresher_applications
            (full_name, student_no, phone, email, programme, gender, hometown, admission_year, status)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`,
-        [a.full_name, a.student_no, a.phone, a.email, a.programme, a.gender, a.hometown, String(YEAR_START)]
+        [
+          a.full_name,
+          a.student_no,
+          a.phone,
+          a.email,
+          a.programme,
+          a.gender,
+          a.hometown,
+          String(YEAR_START),
+        ]
       );
     }
 
@@ -594,10 +620,15 @@ async function seed() {
       { active_academic_year: ACTIVE_YEAR }
     );
 
-    // Persist each student's receipt counter so live receipts continue from here.
-    for (const [sid, n] of receiptSeqByStudent) {
-      await client.query('UPDATE students SET receipt_seq = $1 WHERE id = $2', [n, sid]);
-    }
+    // Snapshot the payer onto every student-linked receipt (name, index number,
+    // level) so free-flow numbering and reports read uniformly from the
+    // receipts table. Free-flow receipts were inserted with snapshots already.
+    await client.query(
+      `UPDATE receipts r
+       SET student_name = s.name, student_no = s.student_no, level = s.level
+       FROM students s
+       WHERE r.student_id = s.id AND r.student_no IS NULL`
+    );
 
     await client.query('COMMIT');
   } catch (err) {
@@ -610,9 +641,16 @@ async function seed() {
   console.log('Seed data applied.');
   console.log(`Active academic year: ${ACTIVE_YEAR}`);
   console.log('School admin:  admin@sciences.uenr.edu.gh / admin1234');
+  console.log(`Super admin:  ${superEmail} / ${superPassword}`);
+  if (isProd) {
+    console.log('  ^ PRODUCTION: this password is shown ONCE and is not recoverable');
+    console.log('    from the database. Store it in a password manager and change it now.');
+  }
   console.log('School staff:  staff@sciences.uenr.edu.gh / staff1234');
   for (const d of DEPARTMENTS) {
-    console.log(`Dept admin:    ${slug(d.name)}@sciences.uenr.edu.gh / dept1234  (${d.code}, PIN ${d.pin})`);
+    console.log(
+      `Dept admin:    ${slug(d.name)}@sciences.uenr.edu.gh / dept1234  (${d.code}, PIN ${d.pin})`
+    );
   }
   console.log('Dept staff:    csstaff@sciences.uenr.edu.gh / staff1234');
   await pool.end();

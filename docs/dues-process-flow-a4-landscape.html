@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Dues Management System — Process Flow (A4 Landscape)</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #eef1f5; }
+  .sheet { width: 297mm; height: 210mm; margin: 10mm auto; background: #fff;
+           box-shadow: 0 2px 12px rgba(0,0,0,.18); }
+  svg { display: block; width: 297mm; height: 210mm; }
+  .toolbar { text-align: center; margin: 10px 0; font: 13px 'Segoe UI', system-ui, sans-serif; }
+  .toolbar button { font: 13px 'Segoe UI', system-ui, sans-serif; padding: 6px 14px; cursor: pointer; }
+  @media print { html, body { background: #fff; } .sheet { margin: 0; box-shadow: none; } .toolbar { display: none; } }
+  svg text { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; fill: #1e293b; }
+  .title { font-size: 10.5px; font-weight: 700; }
+  .line  { font-size: 9.5px; }
+  .lane  { font-size: 10.5px; font-weight: 700; letter-spacing: .6px; }
+  .elabel{ font-size: 9.5px; font-weight: 600; }
+  .h1    { font-size: 20px; font-weight: 700; }
+  .meta  { font-size: 9px; fill: #475569; }
+  .flow  { fill: none; stroke: #334155; stroke-width: 1.6; }
+  .boxed { fill: #ffffff; stroke-width: 1.6; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button onclick="window.print()">Print / Save as PDF (A4 Landscape)</button>
+  &nbsp;— diagram below is exactly 297 × 210 mm.
+</div>
+
+<div class="sheet">
+<svg viewBox="0 0 1123 794" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Process flow diagram of the Dues Management System">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1123" height="794" fill="#ffffff"/>
+
+  <!-- ============ HEADER ============ -->
+  <text class="h1" x="30" y="42">Dues Management System — Process Flow</text>
+  <text class="meta" x="1093" y="42" text-anchor="end">A4 Landscape · 297 × 210 mm</text>
+  <line x1="20" y1="66" x2="1103" y2="66" stroke="#cbd5e1"/>
+
+  <!-- ============ SWIMLANES ============ -->
+  <rect x="20" y="72"  width="1083" height="228" rx="8" fill="#f0fdfa" stroke="#99f6e4"/>
+  <rect x="20" y="300" width="1083" height="210" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <rect x="20" y="510" width="1083" height="210" rx="8" fill="#f5f3ff" stroke="#ddd6fe"/>
+  <rect x="20" y="72"  width="92" height="228" rx="8" fill="#99f6e4" opacity=".55"/>
+  <rect x="20" y="300" width="92" height="210" rx="8" fill="#dbeafe"/>
+  <rect x="20" y="510" width="92" height="210" rx="8" fill="#ddd6fe" opacity=".55"/>
+  <line x1="112" y1="72" x2="112" y2="720" stroke="#cbd5e1" stroke-dasharray="4 4"/>
+  <text class="lane" fill="#0f766e" transform="rotate(-90 66 186)" x="66" y="186" text-anchor="middle" dominant-baseline="middle">CLASS REP / PUBLIC</text>
+  <text class="lane" fill="#1d4ed8" transform="rotate(-90 66 405)" x="66" y="405" text-anchor="middle" dominant-baseline="middle">SCHOOL ADMIN</text>
+  <text class="lane" fill="#6d28d9" transform="rotate(-90 66 615)" x="66" y="615" text-anchor="middle" dominant-baseline="middle">DEPARTMENT ADMIN</text>
+
+  <!-- ============ ARROWS (under boxes) ============ -->
+  <path class="flow" d="M205,220 V405 H325" marker-end="url(#arrow)"/>          <!-- applies → verify -->
+  <path class="flow" d="M494,180 H560" marker-end="url(#arrow)"/>               <!-- start → collect -->
+  <path class="flow" d="M730,180 H1000 V540" marker-end="url(#arrow)"/>         <!-- collect → receipt -->
+  <path class="flow" d="M495,405 H560 V615 H615" marker-end="url(#arrow)"/>     <!-- verify → admit -->
+  <path class="flow" d="M410,460 V599 H290" marker-end="url(#arrow)"/>          <!-- verify → cancelled -->
+  <path class="flow" d="M785,615 H830 V578 H880" marker-end="url(#arrow)"/>     <!-- admit → receipt -->
+
+  <!-- ============ CLASS REP / PUBLIC ============ -->
+  <rect class="boxed" x="120" y="140" width="170" height="80" rx="8" stroke="#0f766e"/>
+  <text class="title" fill="#0f766e" x="132" y="162">FRESHER APPLIES</text>
+  <text class="line" x="132" y="180">Public pre-registration with the</text>
+  <text class="line" x="132" y="195">department access code →</text>
+  <text class="line" x="132" y="210">application status: PENDING</text>
+
+  <rect class="boxed" x="430" y="158" width="64" height="44" rx="22" stroke="#334155"/>
+  <text class="title" x="462" y="185" text-anchor="middle">START</text>
+
+  <rect class="boxed" x="560" y="140" width="170" height="80" rx="8" stroke="#0f766e"/>
+  <text class="title" fill="#0f766e" x="572" y="162">YEARLY DUES COLLECTION</text>
+  <text class="line" x="572" y="180">Rep unlocks with dept code</text>
+  <text class="line" x="572" y="195">or Collect desk; types name +</text>
+  <text class="line" x="572" y="210">index, picks dues, reviews</text>
+
+  <!-- ============ SCHOOL ADMIN ============ -->
+  <polygon points="410,350 495,405 410,460 325,405" class="boxed" stroke="#2563eb"/>
+  <text class="title" fill="#1d4ed8" x="410" y="401" text-anchor="middle">VERIFY APPLICATION</text>
+  <text class="line" x="410" y="417" text-anchor="middle">check · assign department</text>
+
+  <!-- ============ DEPARTMENT ADMIN ============ -->
+  <polygon points="700,560 785,615 700,670 615,615" class="boxed" stroke="#7c3aed"/>
+  <text class="title" fill="#6d28d9" x="700" y="611" text-anchor="middle">ADMIT FRESHER</text>
+  <text class="line" x="700" y="627" text-anchor="middle">level 100 · dept dues</text>
+
+  <rect class="boxed" x="880" y="540" width="190" height="76" rx="38" fill="#ecfdf5" stroke="#059669"/>
+  <text class="title" fill="#047857" x="975" y="566" text-anchor="middle">RECEIPT ISSUED</text>
+  <text class="line" fill="#047857" x="975" y="585" text-anchor="middle">e-mailed to the payer</text>
+  <text class="line" fill="#047857" x="975" y="600" text-anchor="middle">written to the audit log</text>
+
+  <rect class="boxed" x="140" y="575" width="150" height="48" rx="24" fill="#fef2f2" stroke="#dc2626"/>
+  <text class="title" fill="#b91c1c" x="215" y="596" text-anchor="middle">CANCELLED</text>
+  <text class="meta" fill="#b91c1c" x="215" y="610" text-anchor="middle">application rejected</text>
+
+  <!-- ============ EDGE LABELS ============ -->
+  <text class="elabel" x="212" y="352">status: PENDING</text>
+  <text class="elabel" fill="#1d4ed8" x="567" y="485">verified → assign dept +</text>
+  <text class="elabel" fill="#1d4ed8" x="567" y="499">School dues + souvenirs (SCH)</text>
+  <text class="elabel" fill="#b91c1c" x="417" y="545">cancelled</text>
+  <text class="elabel" fill="#6d28d9" x="790" y="636">admit → Dept dues (DEPT)</text>
+  <text class="elabel" fill="#0f766e" x="1007" y="360">yearly free-flow</text>
+
+  <!-- ============ FOOTER ============ -->
+  <text class="meta" x="20" y="742">One fresher = two receipts: School dues recorded at verification, Department dues at admission. Continuing students have no roster row — every payment is free-flow, with payer name, index, e-mail and level snapshotted on the receipt.</text>
+  <text class="meta" x="20" y="758">Public rep routes sit behind the department access code and are rate-limited; admin routes require a JWT (School Admin sees everything, Dept Admins are department-scoped). Receipt no.: SOS-DUES-&lt;SCH|DEPT|DUES&gt;-&lt;index&gt;-&lt;n&gt;.</text>
+  <rect x="20"  y="772" width="10" height="10" fill="#0f766e"/><text class="meta" x="34"  y="781">Class rep / public page</text>
+  <rect x="155" y="772" width="10" height="10" fill="#2563eb"/><text class="meta" x="169" y="781">School Admin</text>
+  <rect x="255" y="772" width="10" height="10" fill="#7c3aed"/><text class="meta" x="269" y="781">Department Admin</text>
+  <rect x="375" y="772" width="10" height="10" fill="#059669"/><text class="meta" x="389" y="781">Receipt issued (terminal)</text>
+  <rect x="520" y="772" width="10" height="10" fill="#dc2626"/><text class="meta" x="534" y="781">Cancelled</text>
+  <path class="flow" d="M605,777 H628" marker-end="url(#arrow)"/><text class="meta" x="634" y="781">process flow</text>
+</svg>
+</div>
+</body>
+</html>

@@ -1,10 +1,10 @@
-import { Check } from '@phosphor-icons/react';
+import { IconCheck as Check } from '@tabler/icons-react';
 
 export default function Checkbox({ checked, onChange, label, disabled }) {
   return (
     <label className={`cs-checkbox ${disabled ? 'cs-disabled' : ''}`}>
       <div className={`cs-checkbox-box ${checked ? 'cs-checked' : ''}`}>
-        {checked && <Check size={12} weight="bold" />}
+        {checked && <Check size={12} stroke={2.5} />}
       </div>
       <input
         type="checkbox"

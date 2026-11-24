@@ -1,0 +1,56 @@
+.course-rep-accounts {
+  display: grid;
+  gap: 1rem;
+}
+.course-rep-upload {
+  display: grid;
+  gap: .875rem;
+  max-width: 48rem;
+}
+.course-rep-upload p { margin: .25rem 0; }
+.course-rep-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .875rem;
+  padding: 1rem;
+  border: 1px dashed var(--gray-300, #d3d5dc);
+}
+.course-rep-file-name {
+  display: grid;
+  flex: 1 1 10rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.course-rep-file-button { position: relative; cursor: pointer; }
+.course-rep-file-button input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+}
+.course-rep-file-button:focus-within {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.course-rep-file-button[aria-disabled="true"] { opacity: .55; cursor: wait; }
+.course-rep-submit { justify-self: start; }
+.rep-account-actions { display: flex; gap: .5rem; }
+/* Higher specificity than `.btn` (index.css loads after this file and would
+   otherwise re-apply 11px/19px padding, squeezing the icon into a 4px box). */
+.btn.rep-icon-action { padding: 0; width: 44px; height: 44px; min-width: 44px; }
+.rep-icon-action svg { flex-shrink: 0; }
+.rep-action-wrap { display: inline-flex; }
+.rep-action-tooltip { position: fixed; transform: translate(-50%, -100%); z-index: 2000; max-width: 200px; padding: 8px 10px; background: #14235a; color: #fff; font-size: 12px; line-height: 1.4; border-radius: 4px; pointer-events: none; }
+.rep-account-pagination > div { flex-wrap: wrap; gap: 12px; }
+.rep-edit-form { border: 0; padding: 0; }
+.course-rep-create-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+.course-rep-single, .course-rep-create-options .course-rep-upload { min-width: 0; padding: 1.25rem; border: 1px solid var(--gray-300, #d3d5dc); align-content: start; }
+.course-rep-single { display: grid; gap: .625rem; }
+.course-rep-single p { margin: .25rem 0 .5rem; }
+.course-rep-single label { display: grid; gap: .625rem; font-size: .875rem; font-weight: 600; }
+.course-rep-single input { width: 100%; min-width: 0; }
+@media (max-width: 900px) { .course-rep-create-options { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .course-rep-single, .course-rep-create-options .course-rep-upload { padding: 1rem; } .course-rep-submit { width: 100%; } }

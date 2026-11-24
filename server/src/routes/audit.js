@@ -3,16 +3,16 @@ const pool = require('../db/pool');
 const { requireAuth, requireSchoolAdmin } = require('../middleware/auth');
 
 const router = express.Router();
-router.use(requireAuth, (req, res, next) => {
-  if (req.user.role === 'school_staff' || req.user.role === 'dept_staff') {
-    return next(new (require('../utils/errors').AppError)('Access denied', 403));
-  }
-  next();
-});
+// The audit log is a School Admin view — the UI only exposes it to
+// school_admin, so enforce the same at the route. Without this, dept_admin
+// could call /audit directly and read the whole log, and staff were only
+// filtered out by role name.
+router.use(requireAuth, requireSchoolAdmin);
 
 // ─── List audit log entries ───
-// School Admin: sees ALL entries
-// Dept Admin: sees only entries related to their department
+// School Admin: sees ALL entries (the only role allowed through the router).
+// buildWhere keeps a department-scoped branch for defence in depth should the
+// route ever be opened to Dept Admins again.
 router.get('/', async (req, res, next) => {
   try {
     const { page = 1, limit = 50 } = req.query;
@@ -60,13 +60,19 @@ function buildWhere(req) {
   const params = [];
   let where = [];
 
+  // Department-scoped view (defensive: the route is school_admin-only today).
+  // The REP clause is deliberately limited to THIS department — without that
+  // scope a `OR tl.admin_role = 'REP'` clause would expose every department's
+  // rep collections (payer names, amounts, receipt numbers) to a Dept Admin.
+  // The unrestricted view of rep entries belongs to school_admin alone, who
+  // sees everything anyway and needs no clause here.
   if (req.user.role === 'dept_admin') {
     params.push(req.user.id);
     params.push(req.user.department_id);
     where.push(`(
       tl.admin_id = $1
       OR (tl.meta->>'department_id')::int = $2
-      OR tl.admin_role = 'REP'
+      OR (tl.admin_role = 'REP' AND (tl.meta->>'department_id')::int = $2)
     )`);
   }
 

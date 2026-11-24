@@ -7,14 +7,29 @@ const { AppError } = require('../utils/errors');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
+require('../services/staff-sso').mount(router);
 
 // Throttle login attempts to blunt brute-force on admin accounts.
+// The whole campus sits behind ONE shared NAT IP, so the ceiling is generous
+// and successful logins don't count (skipSuccessfulRequests) — a busy
+// reporting day must never lock every admin out at once.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Too many login attempts. Wait 15 minutes and try again.',
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    const reset = req.rateLimit?.resetTime;
+    const retryAfter = reset
+      ? Math.max(1, Math.ceil((reset.getTime() - Date.now()) / 1000))
+      : Math.ceil((15 * 60 * 1000) / 1000);
+    res.status(429).json({
+      error: 'Too many attempts — wait a few minutes before trying again.',
+      code: 'RATE_LIMITED',
+      retry_after: retryAfter,
+    });
+  },
 });
 
 router.post('/login', loginLimiter, async (req, res, next) => {
@@ -32,6 +47,7 @@ router.post('/login', loginLimiter, async (req, res, next) => {
     if (rows.length === 0) throw new AppError('Invalid credentials', 401);
 
     const user = rows[0];
+    if(process.env.STAFF_SSO_ENABLED==='true'&&await require('../services/staff-sso').linked(user.id))throw new AppError('Use Sign in with Staff Access for this account.',403);
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) throw new AppError('Invalid credentials', 401);
 
@@ -62,7 +78,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
        WHERE u.id = $1`,
       [req.user.id]
     );
-    res.json(rows[0]);
+    res.json({...rows[0],...req.user});
   } catch (err) {
     next(err);
   }

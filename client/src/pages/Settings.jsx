@@ -1,23 +1,28 @@
-import { useEffect, useState, useCallback } from 'react';
+import CourseRepAccounts from './CourseRepAccounts';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '../api/client';
+import { asArray } from '../utils/asArray';
+import { mainDuesIssue } from '../utils/duesLimits';
 import { useAuth } from '../context/AuthContext';
+import { useLocation } from 'react-router-dom';
 import {
-  Plus,
-  Trash,
-  PencilSimple,
-  CheckCircle,
-  Warning,
-  Copy,
-  Building,
-  Gift,
-  Users,
-  Crown,
-  Books,
-  Eye,
-  PaperPlaneTilt,
-  LockKey,
-} from '@phosphor-icons/react';
+  IconPlus as Plus,
+  IconTrash as Trash,
+  IconPencil as PencilSimple,
+  IconCircleCheck as CheckCircle,
+  IconAlertTriangle as Warning,
+  IconCopy as Copy,
+  IconBuilding as Building,
+  IconGift as Gift,
+  IconUsers as Users,
+  IconCrown as Crown,
+  IconBooks as Books,
+  IconEye as Eye,
+  IconSend as PaperPlaneTilt,
+  IconCurrencyDollar as CurrencyCircleDollar,
+} from '@tabler/icons-react';
 import Confirm from '../components/ui/Confirm';
+import Checkbox from '../components/ui/Checkbox';
 import Modal from '../components/ui/Modal';
 import PasswordInput from '../components/ui/PasswordInput';
 import Select from '../components/ui/Select';
@@ -37,25 +42,72 @@ function Toast({ message, type, onClose }) {
   );
 }
 
+// Institution timezone (GMT+0) — keeps account dates from sliding a day on
+// devices set outside GMT.
+const ACCRA_TZ = 'Africa/Accra';
+
+// Which students a dues item may be charged to (server normalizes to
+// 'any' | 'male' | 'female'). Gendered items are greyed out of the opposite
+// gender's pickers and refused server-side at charge time.
+const GENDER_SCOPE_OPTIONS = [
+  { value: 'any', label: 'All students' },
+  { value: 'female', label: 'Female students only' },
+  { value: 'male', label: 'Male students only' },
+];
+
+function formatShortDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { timeZone: ACCRA_TZ });
+}
+
+// Parse a dues amount from its input. Returns NaN for empty/non-numeric text
+// so callers can reject it: Number('') === 0 would silently store GHS 0.
+function parseAmount(raw) {
+  const s = String(raw ?? '').trim();
+  if (s === '') return NaN;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+// Valid Settings tab keys per role — also the allow-list for ?tab= deep-links.
+const SCHOOL_TAB_KEYS = ['departments', 'dues-items', 'prereg', 'souvenirs', 'admins'];
+const DEPT_TAB_KEYS = ['my-dept', 'dues-items', 'souvenirs', 'staff'];
+
 export default function Settings() {
   const { user } = useAuth();
-  const isSchool = user?.role === 'school_admin';
-  const [tab, setTab] = useState(isSchool ? 'departments' : 'my-dept');
+  const isSuper = user?.role === 'super_admin';
+  const isSchool = user?.role === 'school_admin' || isSuper;
+  const location = useLocation();
+  // Deep-links (the sidebar's Accounts item → ?tab=admins) win over the role
+  // default; anything invalid falls back to it.
+  const [tab, setTab] = useState(() => {
+    const q = new URLSearchParams(location.search).get('tab');
+    const valid = isSchool ? SCHOOL_TAB_KEYS : DEPT_TAB_KEYS;
+    return q && valid.includes(q) ? q : isSchool ? 'departments' : 'my-dept';
+  });
 
   const [departments, setDepartments] = useState([]);
-  const [classes, setClasses] = useState([]);
   const [souvenirs, setSouvenirs] = useState([]);
   const [admins, setAdmins] = useState([]);
   const [schoolAdmins, setSchoolAdmins] = useState([]);
+  const [superAdmins, setSuperAdmins] = useState([]);
   const [deptStaff, setDeptStaff] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [loadError, setLoadError] = useState('');
 
+  // Keep the tab in sync with ?tab=… deep-links (the sidebar's Accounts item).
+  useEffect(() => {
+    const q = new URLSearchParams(location.search).get('tab');
+    if (!q) return;
+    const valid = isSchool ? SCHOOL_TAB_KEYS : DEPT_TAB_KEYS;
+    if (valid.includes(q)) setTab(q);
+  }, [location.search, isSchool]);
+
   // Forms
   const [deptForm, setDeptForm] = useState({ name: '' });
-  const [classForm, setClassForm] = useState({ name: '', level: '' });
-  const [schoolSouvenirForm, setSchoolSouvenirForm] = useState({ name: '', cost: '' });
-  const [deptSouvenirForm, setDeptSouvenirForm] = useState({ name: '', cost: '' });
+  const [schoolSouvenirForm, setSchoolSouvenirForm] = useState({ name: '' });
+  const [deptSouvenirForm, setDeptSouvenirForm] = useState({ name: '' });
   const [adminForm, setAdminForm] = useState({
     name: '',
     email: '',
@@ -72,12 +124,23 @@ export default function Settings() {
     email: '',
     password: '',
   });
+  const [superAdminForm, setSuperAdminForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+  });
   const [schoolDuesInput, setSchoolDuesInput] = useState('');
   const [activeAcademicYear, setActiveAcademicYear] = useState('');
   const [deptDuesInput, setDeptDuesInput] = useState('');
-  const [repPinInput, setRepPinInput] = useState('');
-  const [accessCode, setAccessCode] = useState('');
-  const [accessCodeInput, setAccessCodeInput] = useState('');
+
+  // Other Dues items (freshers-only additional dues).
+  const [duesItems, setDuesItems] = useState([]);
+  const [duesItemForm, setDuesItemForm] = useState({
+    name: '',
+    amount: '',
+    department_id: '',
+    active: true,
+  });
 
   // Confirm state
   const [confirm, setConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
@@ -88,17 +151,30 @@ export default function Settings() {
   const [showSchoolStaffModal, setShowSchoolStaffModal] = useState(false);
   const [showDeptStaffModal, setShowDeptStaffModal] = useState(false);
   const [showDeptAdminModal, setShowDeptAdminModal] = useState(false);
+  const [showSuperAdminModal, setShowSuperAdminModal] = useState(false);
   const [showDeptSouvenirModal, setShowDeptSouvenirModal] = useState(false);
-  const [showClassModal, setShowClassModal] = useState(false);
+  const [showDuesItemModal, setShowDuesItemModal] = useState(false);
 
   // Rows currently being edited (null = the modal is in "create" mode).
   const [editingDept, setEditingDept] = useState(null);
-  const [editingClass, setEditingClass] = useState(null);
   const [editingSchoolSouvenir, setEditingSchoolSouvenir] = useState(null);
   const [editingDeptSouvenir, setEditingDeptSouvenir] = useState(null);
   const [editingAdmin, setEditingAdmin] = useState(null);
   const [editingSchoolStaff, setEditingSchoolStaff] = useState(null);
   const [editingDeptStaff, setEditingDeptStaff] = useState(null);
+  const [editingSuperAdmin, setEditingSuperAdmin] = useState(null);
+  const [editingDuesItem, setEditingDuesItem] = useState(null);
+
+  // Double-submit guard for modal forms — only one modal can be open at a
+  // time, so a single flag covers every create/save button in this page.
+  const [modalSaving, setModalSaving] = useState(false);
+  const modalSavingRef = useRef(false);
+
+  // Dues inputs are seeded from the server once (or right after that field's
+  // own save). loadAll() runs after every mutation, and re-seeding there would
+  // revert an amount the admin is still busy typing.
+  const seededSchoolDues = useRef(false);
+  const seededDeptDues = useRef(false);
 
   const addToast = useCallback((message, type = 'success') => {
     const id = Date.now();
@@ -113,43 +189,59 @@ export default function Settings() {
     api
       .get('/departments')
       .then((res) => {
-        setDepartments(res.data);
-        if (!isSchool && res.data[0]) setDeptDuesInput(res.data[0].dues_amount || '');
+        const rows = asArray(res.data);
+        setDepartments(rows);
+        if (!isSchool && rows[0] && !seededDeptDues.current) {
+          seededDeptDues.current = true;
+          setDeptDuesInput(rows[0].dues_amount || '');
+        }
       })
       .catch(() => setLoadError('Department data could not be loaded.'));
     api
-      .get('/classes')
-      .then((res) => setClasses(res.data))
-      .catch(() => setLoadError('Class data could not be loaded.'));
-    api
       .get('/souvenirs')
-      .then((res) => setSouvenirs(res.data))
+      .then((res) => setSouvenirs(asArray(res.data)))
       .catch(() => setLoadError('Souvenir data could not be loaded.'));
     api
       .get('/settings')
       .then((res) => {
-        setSchoolDuesInput(res.data?.school_dues_amount || '');
+        if (!seededSchoolDues.current) {
+          seededSchoolDues.current = true;
+          setSchoolDuesInput(res.data?.school_dues_amount ?? '');
+        }
         setActiveAcademicYear(res.data?.active_academic_year || '');
-        setAccessCode(res.data?.fresher_access_code || '');
-        setAccessCodeInput(res.data?.fresher_access_code || '');
       })
       .catch(() => setLoadError('Settings data could not be loaded.'));
+    api
+      .get('/dues-items')
+      .then((res) => setDuesItems(asArray(res.data)))
+      .catch(() => setLoadError('Additional dues items could not be loaded.'));
     if (isSchool) {
       api
         .get('/users', { params: { role: 'dept_admin' } })
-        .then((res) => setAdmins(res.data.filter((u) => u.role === 'dept_admin')))
+        .then((res) => setAdmins(asArray(res.data).filter((u) => u.role === 'dept_admin')))
         .catch(() => setLoadError('Admin data could not be loaded.'));
       api
         .get('/users', { params: { role: 'school_staff' } })
-        .then((res) => setSchoolAdmins(res.data.filter((u) => u.role === 'school_staff')))
+        .then((res) => setSchoolAdmins(asArray(res.data).filter((u) => u.role === 'school_staff')))
         .catch(() => setLoadError('Admin data could not be loaded.'));
+      if (isSuper) {
+        api
+          .get('/users', { params: { role: 'super_admin' } })
+          .then((res) => setSuperAdmins(asArray(res.data).filter((u) => u.role === 'super_admin')))
+          .catch(() => setLoadError('Super admin data could not be loaded.'));
+        // The super admin sees every department's staff, not just one dept's.
+        api
+          .get('/users', { params: { role: 'dept_staff' } })
+          .then((res) => setDeptStaff(asArray(res.data).filter((u) => u.role === 'dept_staff')))
+          .catch(() => setLoadError('Staff data could not be loaded.'));
+      }
     } else {
       api
         .get('/users', { params: { role: 'dept_staff' } })
-        .then((res) => setDeptStaff(res.data.filter((u) => u.role === 'dept_staff')))
+        .then((res) => setDeptStaff(asArray(res.data).filter((u) => u.role === 'dept_staff')))
         .catch(() => setLoadError('Staff data could not be loaded.'));
     }
-  }, [isSchool]);
+  }, [isSchool, isSuper]);
 
   useEffect(() => {
     loadAll();
@@ -157,6 +249,15 @@ export default function Settings() {
 
   const showConfirm = (title, message, onConfirm) => {
     setConfirm({ open: true, title, message, onConfirm });
+  };
+
+  // Used inside Confirm handlers: surface the failure, then re-throw so the
+  // dialog knows the action failed and stays open instead of closing as if it
+  // had succeeded.
+  const confirmError = (err, fallback) => {
+    const message = err.response?.data?.error || fallback;
+    addToast(message, 'error');
+    throw new Error(message);
   };
 
   const deptOptions = departments.map((d) => ({ value: d.id, label: d.name }));
@@ -168,14 +269,24 @@ export default function Settings() {
   const schoolSouvenirs = souvenirs.filter((s) => s.category === 'school');
   const deptSouvenirs = isSchool ? souvenirs.filter((s) => s.category === 'department') : souvenirs; // dept-scoped already
 
+  // Other Dues rows. Ownership: the school admin manages school-wide items;
+  // each department's admin manages their own. The school's list is
+  // school-wide only — department items live with their department (the API
+  // still returns them to school accounts for the verify desk, we just don't
+  // offer management of them here).
+  const schoolWideDuesItems = duesItems.filter((i) => i.department_id == null);
+  const ownDuesItems = duesItems.filter(
+    (i) => Number(i.department_id) === Number(user?.department_id)
+  );
+
   const deptPager = usePagination(departments, 8);
   const schoolSouvenirsPager = usePagination(schoolSouvenirs, 8);
   const deptSouvenirsReadPager = usePagination(isSchool ? deptSouvenirs : [], 8);
   const deptOwnSouvPager = usePagination(!isSchool ? deptSouvenirs : [], 8);
   const adminPager = usePagination(admins, 8);
   const schoolAdminPager = usePagination(schoolAdmins, 8);
+  const superAdminPager = usePagination(superAdmins, 8);
   const deptStaffPager = usePagination(deptStaff, 8);
-  const classPager = usePagination(classes, 8);
 
   const copyText = async (text, what) => {
     try {
@@ -191,14 +302,51 @@ export default function Settings() {
   };
 
   // ─── School-wide dues (School Admin) ───
-  const saveSchoolDues = async () => {
+  const persistSchoolDues = async (value) => {
     try {
-      await api.put('/settings/school_dues_amount', { value: Number(schoolDuesInput) });
+      const res = await api.put('/settings/school_dues_amount', { value });
+      // Re-seed from the server's quantized value right after this field's
+      // own save; loadAll() alone must never overwrite a mid-edit input.
+      setSchoolDuesInput(res.data?.school_dues_amount ?? String(value));
+      seededSchoolDues.current = true;
       addToast('School-wide dues amount updated.');
       loadAll();
+      return true;
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed to update', 'error');
+      return false;
     }
+  };
+
+  const saveSchoolDues = async () => {
+    const value = parseAmount(schoolDuesInput);
+    if (Number.isNaN(value)) {
+      addToast('Enter an amount', 'error');
+      return;
+    }
+    if (value < 0) {
+      addToast('Amount cannot be negative', 'error');
+      return;
+    }
+    const schoolDuesIssue = mainDuesIssue(value, 'School dues');
+    if (schoolDuesIssue) {
+      addToast(schoolDuesIssue, 'error');
+      return;
+    }
+    if (value === 0) {
+      // GHS 0 is legal but drastic — make saving it an explicit choice.
+      showConfirm(
+        'Save GHS 0 school dues?',
+        'School-wide dues will be set to GHS 0.00. No student will be charged school dues until you set an amount again. Save GHS 0?',
+        async () => {
+          const ok = await persistSchoolDues(value);
+          if (!ok) throw new Error('School dues were not saved.');
+          setConfirm((c) => ({ ...c, open: false }));
+        }
+      );
+      return;
+    }
+    await persistSchoolDues(value);
   };
 
   const saveActiveAcademicYear = async () => {
@@ -217,68 +365,166 @@ export default function Settings() {
     }
   };
 
-  // ─── Fresher pre-registration access code (School Admin) ───
-  const saveAccessCode = async () => {
-    const v = accessCodeInput.trim();
-    if (v.length < 4) {
-      addToast('Access code must be at least 4 characters.', 'error');
-      return;
-    }
-    try {
-      await api.put('/settings/fresher_access_code', { value: v });
-      setAccessCode(v);
-      addToast('Pre-registration access code updated.');
-    } catch (err) {
-      addToast(err.response?.data?.error || 'Failed to update', 'error');
-    }
-  };
-
-  // ─── Dept collector PIN (owning Dept Admin) ───
-  const saveRepPin = async () => {
-    const v = repPinInput.trim();
-    if (!/^\d{4,8}$/.test(v)) {
-      addToast('PIN must be 4–8 digits.', 'error');
-      return;
-    }
-    try {
-      await api.put(`/departments/${user.department_id}/pin`, { pin: v });
-      setRepPinInput('');
-      addToast('Collector PIN saved. Reps will need it before recording payments.');
-      loadAll();
-    } catch (err) {
-      addToast(err.response?.data?.error || 'Failed to save PIN', 'error');
-    }
-  };
-
-  const removeRepPin = () => {
-    showConfirm(
-      'Remove Collector PIN',
-      'Recording will stay open to anyone with the department code until a new PIN is set. Remove it?',
-      async () => {
-        try {
-          await api.delete(`/departments/${user.department_id}/pin`);
-          setRepPinInput('');
-          addToast('Collector PIN removed. Set a new one to protect recording.');
-          loadAll();
-        } catch (err) {
-          addToast(err.response?.data?.error || 'Failed to remove PIN', 'error');
-        }
-        setConfirm({ ...confirm, open: false });
-      }
-    );
-  };
 
   // ─── Dept dues (owning Dept Admin) ───
-  const saveDeptDues = async () => {
+  const persistDeptDues = async (value) => {
     try {
-      await api.put(`/departments/${user.department_id}/dues`, {
-        dues_amount: Number(deptDuesInput),
+      const res = await api.put(`/departments/${user.department_id}/dues`, {
+        dues_amount: value,
       });
+      // Re-seed from the server's quantized value right after this field's
+      // own save; loadAll() alone must never overwrite a mid-edit input.
+      setDeptDuesInput(res.data?.dues_amount ?? String(value));
+      seededDeptDues.current = true;
       addToast('Your department dues amount updated.');
       loadAll();
+      return true;
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed to update', 'error');
+      return false;
     }
+  };
+
+  const saveDeptDues = async () => {
+    const value = parseAmount(deptDuesInput);
+    if (Number.isNaN(value)) {
+      addToast('Enter an amount', 'error');
+      return;
+    }
+    if (value < 0) {
+      addToast('Amount cannot be negative', 'error');
+      return;
+    }
+    const deptDuesIssue = mainDuesIssue(value, 'Department dues');
+    if (deptDuesIssue) {
+      addToast(deptDuesIssue, 'error');
+      return;
+    }
+    if (value === 0) {
+      // GHS 0 is legal but drastic — make saving it an explicit choice.
+      showConfirm(
+        'Save GHS 0 department dues?',
+        'This department will charge GHS 0.00 dues until you set an amount again. Save GHS 0?',
+        async () => {
+          const ok = await persistDeptDues(value);
+          if (!ok) throw new Error('Department dues were not saved.');
+          setConfirm((c) => ({ ...c, open: false }));
+        }
+      );
+      return;
+    }
+    await persistDeptDues(value);
+  };
+
+  // ─── Additional dues items ("Other Dues", freshers only) ───
+  // School Admin manages school-wide items + every department's items;
+  // Dept Admin manages only their own department's items (enforced server
+  // side too). Items are deactivated, not deleted, once charged.
+  const openDuesItemCreate = () => {
+    setEditingDuesItem(null);
+    setDuesItemForm({
+      name: '',
+      amount: '',
+      gender: 'any',
+      department_id: isSchool ? '' : String(user?.department_id || ''),
+      active: true,
+    });
+    setShowDuesItemModal(true);
+  };
+
+  const openDuesItemEdit = (item) => {
+    setEditingDuesItem(item);
+    setDuesItemForm({
+      name: item.name,
+      amount: String(item.amount ?? ''),
+      gender: item.gender || 'any',
+      department_id: item.department_id == null ? '' : String(item.department_id),
+      active: Boolean(item.active),
+    });
+    setShowDuesItemModal(true);
+  };
+
+  const saveDuesItem = async (e) => {
+    e.preventDefault();
+    if (modalSavingRef.current) return;
+    const amount = parseAmount(duesItemForm.amount);
+    if (Number.isNaN(amount)) {
+      addToast('Enter an amount', 'error');
+      return;
+    }
+    if (amount < 0) {
+      addToast('Amount cannot be negative', 'error');
+      return;
+    }
+    if (!duesItemForm.name.trim()) {
+      addToast('Enter a name for the dues item', 'error');
+      return;
+    }
+    modalSavingRef.current = true;
+    setModalSaving(true);
+    try {
+      // School admins create school-wide items only; dept admins create for
+      // their own department. The scope is never editable after creation.
+      const scopeDept = isSchool ? null : user?.department_id || null;
+      if (editingDuesItem) {
+        await api.put(`/dues-items/${editingDuesItem.id}`, {
+          name: duesItemForm.name.trim(),
+          amount,
+          gender: duesItemForm.gender || 'any',
+          active: duesItemForm.active,
+        });
+        addToast('Dues item updated.');
+      } else {
+        await api.post('/dues-items', {
+          name: duesItemForm.name.trim(),
+          amount,
+          gender: duesItemForm.gender || 'any',
+          department_id: scopeDept,
+        });
+        addToast(scopeDept ? 'Department dues item added.' : 'School-wide dues item added.');
+      }
+      setShowDuesItemModal(false);
+      setEditingDuesItem(null);
+      loadAll();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed to save dues item', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
+    }
+  };
+
+  // Quick activate/deactivate from the table (name/amount unchanged).
+  const toggleDuesItem = async (item) => {
+    try {
+      await api.put(`/dues-items/${item.id}`, { active: !item.active });
+      addToast(
+        !item.active
+          ? `"${item.name}" activated.`
+          : `"${item.name}" deactivated — it will not be offered at verification.`
+      );
+      loadAll();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed to update the dues item', 'error');
+    }
+  };
+
+  const deleteDuesItem = (item) => {
+    showConfirm(
+      'Delete Dues Item',
+      `Delete "${item.name}"? Only items that have never been charged can be deleted — once a fresher has paid it, deactivate instead.`,
+      async () => {
+        try {
+          await api.delete(`/dues-items/${item.id}`);
+        } catch (err) {
+          // Re-throws: the Confirm dialog stays open with the server's reason.
+          confirmError(err, 'Failed to delete dues item');
+        }
+        addToast('Dues item deleted.');
+        loadAll();
+        setConfirm((prev) => ({ ...prev, open: false }));
+      }
+    );
   };
 
   // ─── Departments (School Admin — structure only; dues are the dept's own) ───
@@ -296,6 +542,10 @@ export default function Settings() {
 
   const saveDept = async (e) => {
     e.preventDefault();
+    // Guard against double-submit: while a save is in flight, ignore clicks.
+    if (modalSavingRef.current) return;
+    modalSavingRef.current = true;
+    setModalSaving(true);
     try {
       if (editingDept) {
         await api.put(`/departments/${editingDept.id}`, {
@@ -313,73 +563,26 @@ export default function Settings() {
       loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
     }
   };
 
   const deleteDept = (d) => {
     showConfirm(
       'Delete Department',
-      `Delete "${d.name}" and all its classes, students and admins? This cannot be undone.`,
+      `Delete "${d.name}"? Its students, souvenirs and staff accounts are removed too, and this cannot be undone. Departments that already have receipts cannot be deleted — archive them instead.`,
       async () => {
         try {
           await api.delete(`/departments/${d.id}`);
-          addToast('Department deleted.');
-          loadAll();
         } catch (err) {
-          addToast(err.response?.data?.error || 'Failed', 'error');
+          // Re-throws: the Confirm dialog stays open so the user can read why.
+          confirmError(err, 'Failed to delete department');
         }
-        setConfirm({ ...confirm, open: false });
-      }
-    );
-  };
-
-  // ─── Classes (Dept Admin creates own) ───
-  const openClassCreate = () => {
-    setEditingClass(null);
-    setClassForm({ name: '', level: '' });
-    setShowClassModal(true);
-  };
-
-  const openClassEdit = (c) => {
-    setEditingClass(c);
-    setClassForm({ name: c.name, level: c.level || '' });
-    setShowClassModal(true);
-  };
-
-  const saveClass = async (e) => {
-    e.preventDefault();
-    try {
-      const name = classForm.name.trim();
-      const level = classForm.level.trim() || name;
-      if (editingClass) {
-        await api.put(`/classes/${editingClass.id}`, { name, level });
-        addToast('Class updated.');
-      } else {
-        await api.post('/classes', { department_id: user.department_id, name, level });
-        addToast('Class added.');
-      }
-      setClassForm({ name: '', level: '' });
-      setEditingClass(null);
-      setShowClassModal(false);
-      loadAll();
-    } catch (err) {
-      addToast(err.response?.data?.error || 'Failed', 'error');
-    }
-  };
-
-  const deleteClass = (c) => {
-    showConfirm(
-      'Delete Class',
-      `Delete "${c.name}"? Students in this class will keep their records but lose the class.`,
-      async () => {
-        try {
-          await api.delete(`/classes/${c.id}`);
-          addToast('Class deleted.');
-          loadAll();
-        } catch (err) {
-          addToast(err.response?.data?.error || 'Failed', 'error');
-        }
-        setConfirm({ ...confirm, open: false });
+        addToast('Department deleted.');
+        loadAll();
+        setConfirm((c) => ({ ...c, open: false }));
       }
     );
   };
@@ -389,22 +592,25 @@ export default function Settings() {
   // Department souvenirs are managed by the owning Dept Admin (given at admission).
   const openSchoolSouvenirCreate = () => {
     setEditingSchoolSouvenir(null);
-    setSchoolSouvenirForm({ name: '', cost: '' });
+    setSchoolSouvenirForm({ name: '' });
     setShowSchoolSouvenirModal(true);
   };
 
   const openSchoolSouvenirEdit = (s) => {
     setEditingSchoolSouvenir(s);
-    setSchoolSouvenirForm({ name: s.name, cost: String(s.cost ?? '') });
+    setSchoolSouvenirForm({ name: s.name });
     setShowSchoolSouvenirModal(true);
   };
 
   const saveSchoolSouvenir = async (e) => {
     e.preventDefault();
+    // Guard against double-submit: while a save is in flight, ignore clicks.
+    if (modalSavingRef.current) return;
+    modalSavingRef.current = true;
+    setModalSaving(true);
     try {
       const payload = {
         name: schoolSouvenirForm.name,
-        cost: Number(schoolSouvenirForm.cost) || 0,
       };
       if (editingSchoolSouvenir) {
         await api.put(`/souvenirs/${editingSchoolSouvenir.id}`, { ...payload, category: 'school' });
@@ -413,33 +619,39 @@ export default function Settings() {
         await api.post('/souvenirs', { ...payload, category: 'school' });
         addToast('School souvenir added.');
       }
-      setSchoolSouvenirForm({ name: '', cost: '' });
+      setSchoolSouvenirForm({ name: '' });
       setEditingSchoolSouvenir(null);
       setShowSchoolSouvenirModal(false);
       loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
     }
   };
 
   const openDeptSouvenirCreate = () => {
     setEditingDeptSouvenir(null);
-    setDeptSouvenirForm({ name: '', cost: '' });
+    setDeptSouvenirForm({ name: '' });
     setShowDeptSouvenirModal(true);
   };
 
   const openDeptSouvenirEdit = (s) => {
     setEditingDeptSouvenir(s);
-    setDeptSouvenirForm({ name: s.name, cost: String(s.cost ?? '') });
+    setDeptSouvenirForm({ name: s.name });
     setShowDeptSouvenirModal(true);
   };
 
   const saveDeptSouvenir = async (e) => {
     e.preventDefault();
+    // Guard against double-submit: while a save is in flight, ignore clicks.
+    if (modalSavingRef.current) return;
+    modalSavingRef.current = true;
+    setModalSaving(true);
     try {
       const payload = {
         name: deptSouvenirForm.name,
-        cost: Number(deptSouvenirForm.cost) || 0,
       };
       if (editingDeptSouvenir) {
         await api.put(`/souvenirs/${editingDeptSouvenir.id}`, {
@@ -451,12 +663,15 @@ export default function Settings() {
         await api.post('/souvenirs', { ...payload, category: 'department' });
         addToast('Department souvenir added.');
       }
-      setDeptSouvenirForm({ name: '', cost: '' });
+      setDeptSouvenirForm({ name: '' });
       setEditingDeptSouvenir(null);
       setShowDeptSouvenirModal(false);
       loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
     }
   };
 
@@ -464,12 +679,13 @@ export default function Settings() {
     showConfirm('Delete Souvenir', `Delete "${s.name}"?`, async () => {
       try {
         await api.delete(`/souvenirs/${s.id}`);
-        addToast('Souvenir deleted.');
-        loadAll();
       } catch (err) {
-        addToast(err.response?.data?.error || 'Failed', 'error');
+        // Re-throws: the Confirm dialog stays open so the user can read why.
+        confirmError(err, 'Failed to delete souvenir');
       }
-      setConfirm({ ...confirm, open: false });
+      addToast('Souvenir deleted.');
+      loadAll();
+      setConfirm((prev) => ({ ...prev, open: false }));
     });
   };
 
@@ -493,6 +709,10 @@ export default function Settings() {
 
   const saveAdmin = async (e) => {
     e.preventDefault();
+    // Guard against double-submit: while a save is in flight, ignore clicks.
+    if (modalSavingRef.current) return;
+    modalSavingRef.current = true;
+    setModalSaving(true);
     try {
       if (editingAdmin) {
         await api.put(`/users/${editingAdmin.id}`, {
@@ -519,20 +739,28 @@ export default function Settings() {
       loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
     }
   };
 
   const deleteAdmin = (a) => {
-    showConfirm('Delete Admin', `Delete admin "${a.name}"?`, async () => {
-      try {
-        await api.delete(`/users/${a.id}`);
+    showConfirm(
+      'Delete Admin',
+      `Delete admin "${a.name}"? Their account is removed immediately and they can no longer sign in. Receipts and payments they recorded stay on record.`,
+      async () => {
+        try {
+          await api.delete(`/users/${a.id}`);
+        } catch (err) {
+          // Re-throws: the Confirm dialog stays open so the user can read why.
+          confirmError(err, 'Failed to delete admin');
+        }
         addToast('Admin deleted.');
         loadAll();
-      } catch (err) {
-        addToast(err.response?.data?.error || 'Failed', 'error');
+        setConfirm((prev) => ({ ...prev, open: false }));
       }
-      setConfirm({ ...confirm, open: false });
-    });
+    );
   };
 
   // ─── School Staff (secondary limited accounts for auditing) ───
@@ -550,6 +778,10 @@ export default function Settings() {
 
   const saveSchoolAdmin = async (e) => {
     e.preventDefault();
+    // Guard against double-submit: while a save is in flight, ignore clicks.
+    if (modalSavingRef.current) return;
+    modalSavingRef.current = true;
+    setModalSaving(true);
     try {
       if (editingSchoolStaff) {
         await api.put(`/users/${editingSchoolStaff.id}`, {
@@ -566,9 +798,7 @@ export default function Settings() {
           password: schoolAdminForm.password,
           role: 'school_staff',
         });
-        addToast(
-          'School staff account created — limited to Register Freshers / All Students / Receipts / Verify.'
-        );
+        addToast('School staff account created — limited to Register Freshers and Verify Receipt.');
       }
       setSchoolAdminForm({ name: '', email: '', password: '' });
       setEditingSchoolStaff(null);
@@ -576,22 +806,93 @@ export default function Settings() {
       loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
     }
   };
 
   const deleteSchoolAdmin = (a) => {
     showConfirm(
       'Delete School Staff',
-      `Delete school staff "${a.name}"? They will lose access immediately.`,
+      `Delete school staff "${a.name}"? Their account is removed immediately and they lose access. Records they created stay on record.`,
       async () => {
         try {
           await api.delete(`/users/${a.id}`);
-          addToast('School staff deleted.');
-          loadAll();
         } catch (err) {
-          addToast(err.response?.data?.error || 'Failed', 'error');
+          // Re-throws: the Confirm dialog stays open so the user can read why.
+          confirmError(err, 'Failed to delete school staff');
         }
-        setConfirm({ ...confirm, open: false });
+        addToast('School staff deleted.');
+        loadAll();
+        setConfirm((prev) => ({ ...prev, open: false }));
+      }
+    );
+  };
+
+  // ─── Super Admins (super-admin-only accounts — full school access + the
+  //     five privileged powers). Only a super admin may manage these. ───
+  const openSuperAdminCreate = () => {
+    setEditingSuperAdmin(null);
+    setSuperAdminForm({ name: '', email: '', password: '' });
+    setShowSuperAdminModal(true);
+  };
+
+  const openSuperAdminEdit = (a) => {
+    setEditingSuperAdmin(a);
+    setSuperAdminForm({ name: a.name, email: a.email, password: '' });
+    setShowSuperAdminModal(true);
+  };
+
+  const saveSuperAdmin = async (e) => {
+    e.preventDefault();
+    if (modalSavingRef.current) return;
+    modalSavingRef.current = true;
+    setModalSaving(true);
+    try {
+      if (editingSuperAdmin) {
+        await api.put(`/users/${editingSuperAdmin.id}`, {
+          name: superAdminForm.name,
+          email: superAdminForm.email,
+          password: superAdminForm.password || undefined,
+          role: 'super_admin',
+        });
+        addToast('Super admin updated.');
+      } else {
+        await api.post('/users', {
+          name: superAdminForm.name,
+          email: superAdminForm.email,
+          password: superAdminForm.password,
+          role: 'super_admin',
+        });
+        addToast('Super admin account created.');
+      }
+      setSuperAdminForm({ name: '', email: '', password: '' });
+      setEditingSuperAdmin(null);
+      setShowSuperAdminModal(false);
+      loadAll();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
+    }
+  };
+
+  const deleteSuperAdmin = (a) => {
+    showConfirm(
+      'Delete Super Admin',
+      `Delete super admin "${a.name}"? They lose every privileged power immediately. Records they created stay on record.`,
+      async () => {
+        try {
+          await api.delete(`/users/${a.id}`);
+        } catch (err) {
+          // Re-throws: the Confirm dialog stays open so the user can read why.
+          confirmError(err, 'Failed to delete super admin');
+        }
+        addToast('Super admin deleted.');
+        loadAll();
+        setConfirm((prev) => ({ ...prev, open: false }));
       }
     );
   };
@@ -611,6 +912,10 @@ export default function Settings() {
 
   const saveDeptStaff = async (e) => {
     e.preventDefault();
+    // Guard against double-submit: while a save is in flight, ignore clicks.
+    if (modalSavingRef.current) return;
+    modalSavingRef.current = true;
+    setModalSaving(true);
     try {
       if (editingDeptStaff) {
         await api.put(`/users/${editingDeptStaff.id}`, {
@@ -630,7 +935,7 @@ export default function Settings() {
           role: 'dept_staff',
         });
         addToast(
-          'Department staff account created — limited to Admit Freshers / Students / Receipts / Verify.'
+          'Department staff account created — limited to Admit Freshers, Receipts and Verify.'
         );
       }
       setDeptStaffForm({ name: '', email: '', password: '' });
@@ -639,42 +944,51 @@ export default function Settings() {
       loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      modalSavingRef.current = false;
+      setModalSaving(false);
     }
   };
 
   const deleteDeptStaff = (a) => {
     showConfirm(
       'Delete Department Staff',
-      `Delete department staff "${a.name}"? They will lose access immediately.`,
+      `Delete department staff "${a.name}"? Their account is removed immediately and they lose access. Receipts they recorded stay on record.`,
       async () => {
         try {
           await api.delete(`/users/${a.id}`);
-          addToast('Department staff deleted.');
-          loadAll();
         } catch (err) {
-          addToast(err.response?.data?.error || 'Failed', 'error');
+          // Re-throws: the Confirm dialog stays open so the user can read why.
+          confirmError(err, 'Failed to delete department staff');
         }
-        setConfirm({ ...confirm, open: false });
+        addToast('Department staff deleted.');
+        loadAll();
+        setConfirm((prev) => ({ ...prev, open: false }));
       }
     );
   };
 
   const schoolTabs = [
     ['departments', 'Departments'],
+    ['dues-items', 'Other Dues'],
     ['prereg', 'Pre-Registration'],
     ['souvenirs', 'Souvenirs'],
     ['admins', 'Admins'],
   ];
   const deptTabs = [
     ['my-dept', 'My Department'],
+    ['dues-items', 'Other Dues'],
     ['souvenirs', 'Dept Souvenirs'],
-    ['classes', 'Classes / Levels'],
     ['staff', 'Staff'],
   ];
   const tabs = isSchool ? schoolTabs : deptTabs;
 
   return (
     <div>
+      <style>{`
+        @media (max-width: 640px) { .hide-sm { display: none; } }
+      `}</style>
+      {isSuper && <CourseRepAccounts departments={departments} />}
       <div className="toast-container">
         {toasts.map((t) => (
           <Toast key={t.id} message={t.message} type={t.type} onClose={() => removeToast(t.id)} />
@@ -704,7 +1018,7 @@ export default function Settings() {
           <p className="subtitle">
             {isSchool
               ? 'School-wide dues, souvenirs, departments and admins.'
-              : `Your department's dues, souvenirs and classes.`}
+              : `Your department's dues, souvenirs and staff.`}
           </p>
         </div>
       </div>
@@ -714,18 +1028,18 @@ export default function Settings() {
           {tabs.map(([key, label]) => {
             const icons = {
               departments: <Building size={18} />,
+              'dues-items': <CurrencyCircleDollar size={18} />,
               prereg: <PaperPlaneTilt size={18} />,
               souvenirs: <Gift size={18} />,
               admins: <Users size={18} />,
               'my-dept': <Building size={18} />,
-              classes: <Books size={18} />,
               staff: <Users size={18} />,
             };
             const counts = {
               departments: departments.length,
+              'dues-items': duesItems.length,
               admins: admins.length + schoolAdmins.length,
               souvenirs: souvenirs.length,
-              classes: classes.length,
               staff: deptStaff.length,
             };
             return (
@@ -736,1358 +1050,1570 @@ export default function Settings() {
               >
                 {icons[key]}
                 <span className="nav-label">{label}</span>
-                {counts[key] !== undefined && (
-                  <span className="nav-count">{counts[key]}</span>
-                )}
+                {counts[key] !== undefined && <span className="nav-count">{counts[key]}</span>}
               </button>
             );
           })}
         </nav>
 
         <div className="settings-content">
-
-      {/* ═══════════ SCHOOL: Departments (supervision) ═══════════ */}
-      {tab === 'departments' && isSchool && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <Crown size={20} /> General Settings
-              </h2>
-              <p className="section-desc">
-                Academic year and school-wide dues applied across all departments.
-              </p>
-            </div>
-          </div>
-
-          <div className="settings-stats">
-            <div className="settings-stat">
-              <div className="settings-stat-icon navy">
-                <Building size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">{departments.length}</div>
-                <div className="settings-stat-label">Departments</div>
-              </div>
-            </div>
-            <div className="settings-stat">
-              <div className="settings-stat-icon gold">
-                <Crown size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">
-                  GHS {Number(schoolDuesInput || 0).toFixed(0)}
+          {/* ═══════════ SCHOOL: Departments (supervision) ═══════════ */}
+          {tab === 'departments' && isSchool && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>General Settings</h2>
+                  <p className="section-desc">
+                    Academic year and school-wide dues applied across all departments.
+                  </p>
                 </div>
-                <div className="settings-stat-label">School Dues</div>
               </div>
-            </div>
-            <div className="settings-stat">
-              <div className="settings-stat-icon green">
-                <Users size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">{admins.length + schoolAdmins.length}</div>
-                <div className="settings-stat-label">Total Staff</div>
-              </div>
-            </div>
-          </div>
 
-          <div className="settings-panel">
-            <div className="grid grid-2">
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Active Academic Year</label>
-                <p className="muted text-xs mb-sm">
-                  Used for payments, status checks, and reports.
-                </p>
-                <div className="flex gap-sm">
-                  <input
-                    className="input"
-                    value={activeAcademicYear}
-                    onChange={(e) => setActiveAcademicYear(e.target.value)}
-                    placeholder="e.g. 2026/2027"
-                    pattern="[0-9]{4}/[0-9]{4}"
-                  />
-                  <button className="btn btn-primary btn-sm" onClick={saveActiveAcademicYear}>
-                    Save
+              <div className="settings-stats">
+                <div className="settings-stat">
+                  <div className="settings-stat-icon navy">
+                    <Building size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">{departments.length}</div>
+                    <div className="settings-stat-label">Departments</div>
+                  </div>
+                </div>
+                <div className="settings-stat">
+                  <div className="settings-stat-icon gold">
+                    <Crown size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">
+                      GHS {Number(schoolDuesInput || 0).toFixed(0)}
+                    </div>
+                    <div className="settings-stat-label">School Dues</div>
+                  </div>
+                </div>
+                <div className="settings-stat">
+                  <div className="settings-stat-icon green">
+                    <Users size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">{admins.length + schoolAdmins.length}</div>
+                    <div className="settings-stat-label">Total Staff</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-panel">
+                <div className="grid grid-2">
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Active Academic Year</label>
+                    <p className="muted text-xs mb-sm">
+                      Used for payments, status checks, and reports.
+                    </p>
+                    <div className="flex gap-sm">
+                      <input
+                        className="input"
+                        value={activeAcademicYear}
+                        onChange={(e) => setActiveAcademicYear(e.target.value)}
+                        placeholder="e.g. 2026/2027"
+                        pattern="[0-9]{4}/[0-9]{4}"
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={saveActiveAcademicYear}>
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>School-Wide Dues (GHS per year)</label>
+                    <p className="muted text-xs mb-sm">Paid by every student each year.</p>
+                    <div className="flex gap-sm">
+                      <input
+                        className="input"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={schoolDuesInput}
+                        onChange={(e) => setSchoolDuesInput(e.target.value)}
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={saveSchoolDues}>
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>Departments</h3>
+                  <button className="btn btn-primary btn-sm" onClick={openDeptCreate}>
+                    <Plus size={16} /> Add Department
                   </button>
                 </div>
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>School-Wide Dues (GHS per year)</label>
-                <p className="muted text-xs mb-sm">Paid by every student each year.</p>
-                <div className="flex gap-sm">
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={schoolDuesInput}
-                    onChange={(e) => setSchoolDuesInput(e.target.value)}
-                  />
-                  <button className="btn btn-primary btn-sm" onClick={saveSchoolDues}>
-                    Save
-                  </button>
+                <div className="alert alert-info" style={{ marginBottom: 16 }}>
+                  <Eye size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
+                  Read-only overview. Each Department Admin configures their own dues amount and
+                  souvenirs.
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Building size={16} /> Departments
-              </h3>
-              <button className="btn btn-primary btn-sm" onClick={openDeptCreate}>
-                <Plus size={16} /> Add Department
-              </button>
-            </div>
-            <div className="alert alert-info" style={{ marginBottom: 16 }}>
-              <Eye size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
-              Read-only overview. Each Department Admin configures their own dues amount and
-              souvenirs.
-            </div>
-            <div className="table-wrap">
-              <table className="table settings-table">
-                <thead>
-                  <tr>
-                    <th>Department</th>
-                    <th>Code</th>
-                    <th>Classes</th>
-                    <th>Students</th>
-                    <th>Dues</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deptPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="muted">
-                        No departments yet.
-                      </td>
-                    </tr>
-                  )}
-                  {deptPager.slice.map((d) => {
-                    return (
-                      <tr key={d.id}>
-                        <td className="fw-600">{d.name}</td>
-                        <td>
-                          <span className="code-cell">{d.code}</span>{' '}
-                          <button
-                            className="btn btn-ghost btn-xs"
-                            onClick={() => copyCode(d.code)}
-                            title="Copy code"
-                          >
-                            <Copy size={12} />
-                          </button>
-                        </td>
-                        <td>{d.class_count}</td>
-                        <td>{d.student_count}</td>
-                        <td className="fw-600">GHS {Number(d.dues_amount || 0).toFixed(2)}</td>
-                        <td>
-                          <div className="flex gap-sm">
-                            <button
-                              className="btn btn-outline btn-xs"
-                              onClick={() => openDeptEdit(d)}
-                              title="Edit department"
-                            >
-                              <PencilSimple size={13} />
-                            </button>
-                            <button className="btn btn-danger btn-xs" onClick={() => deleteDept(d)}>
-                              <Trash size={13} />
-                            </button>
-                          </div>
-                        </td>
+                <div className="table-wrap">
+                  <table className="table settings-table">
+                    <thead>
+                      <tr>
+                        <th>Department</th>
+                        <th className="hide-sm">Code</th>
+                        <th>Dues</th>
+                        <th></th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={deptPager.page}
-              totalPages={deptPager.totalPages}
-              onPageChange={deptPager.setPage}
-              totalItems={deptPager.totalItems}
-              pageSize={deptPager.perPage}
-            />
-          </div>
-        </>
-      )}
+                    </thead>
+                    <tbody>
+                      {deptPager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="muted">
+                            No departments yet.
+                          </td>
+                        </tr>
+                      )}
+                      {deptPager.slice.map((d) => {
+                        return (
+                          <tr key={d.id}>
+                            <td className="fw-600">{d.name}</td>
+                            <td className="hide-sm">
+                              <span className="code-cell">{d.code}</span>{' '}
+                              <button
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => copyCode(d.code)}
+                                title="Copy code"
+                              >
+                                <Copy size={12} />
+                              </button>
+                            </td>
+                            <td className="fw-600">GHS {Number(d.dues_amount || 0).toFixed(2)}</td>
+                            <td>
+                              <div className="flex gap-sm">
+                                <button
+                                  className="btn btn-outline btn-xs"
+                                  onClick={() => openDeptEdit(d)}
+                                  title="Edit department"
+                                >
+                                  <PencilSimple size={13} />
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-xs"
+                                  onClick={() => deleteDept(d)}
+                                >
+                                  <Trash size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={deptPager.page}
+                  totalPages={deptPager.totalPages}
+                  onPageChange={deptPager.setPage}
+                  totalItems={deptPager.totalItems}
+                  pageSize={deptPager.perPage}
+                />
+              </div>
+            </>
+          )}
 
-      {/* ═══════════ SCHOOL: Pre-Registration (freshers at home) ═══════════ */}
-      {tab === 'prereg' && isSchool && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <PaperPlaneTilt size={20} /> Pre-Registration
-              </h2>
-              <p className="section-desc">
-                Share the form link and access code with freshers still at home.
-              </p>
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <h3 style={{ marginBottom: 16 }}>
-              <PaperPlaneTilt size={16} style={{ marginRight: 8, verticalAlign: -3 }} />
-              Form Link & Access Code
-            </h3>
-            <p className="muted text-sm mb">
-              Submissions appear under <strong>Freshers → Pre-Registrations</strong>.
-            </p>
-            <div className="mb">
-              <label className="text-sm fw-600" style={{ display: 'block', marginBottom: 6 }}>
-                Form Link
-              </label>
-              <div className="flex gap-sm align-center" style={{ flexWrap: 'wrap' }}>
-                <span className="code-cell" style={{ flex: '1 1 260px', wordBreak: 'break-all' }}>
-                  {`${window.location.origin}/apply`}
-                </span>
+          {/* ═══════════ OTHER DUES: additional dues items (freshers only) ═══════════ */}
+          {tab === 'dues-items' && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>Additional Dues (Other Dues)</h2>
+                  <p className="section-desc">
+                    {isSchool
+                      ? 'School-wide extra charges collected at verification and manual registration. Each department manages — and collects at admission — its own items.'
+                      : `Extra charges your department collects from its freshers at admission, alongside Department dues.`}
+                  </p>
+                </div>
                 <button
-                  className="btn btn-outline btn-sm"
-                  onClick={() =>
-                    copyText(`${window.location.origin}/apply`, 'Pre-registration link')
-                  }
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openDuesItemCreate();
+                  }}
                 >
-                  <Copy size={14} /> Copy link
+                  <Plus size={16} /> Add Item
                 </button>
               </div>
-            </div>
-            <div className="flex gap-sm align-center" style={{ flexWrap: 'wrap' }}>
-              <span className="text-sm fw-600">Access code:</span>
-              {accessCode ? (
-                <>
-                  <span className="code-cell">{accessCode}</span>
-                  <button
-                    className="btn btn-ghost btn-xs"
-                    onClick={() => copyText(accessCode, 'Access code')}
-                    title="Copy access code"
-                  >
-                    <Copy size={13} />
-                  </button>
-                </>
-              ) : (
-                <span className="badge badge-red">Not set yet — set one below</span>
-              )}
-            </div>
-          </div>
 
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <LockKey size={16} /> Change Access Code
-              </h3>
-            </div>
-            <p className="muted text-sm mb">
-              Freshers must enter this code to open the form.
-            </p>
-            <div className="field" style={{ maxWidth: 420, marginBottom: 0 }}>
-              <label>Access Code (min. 4 characters)</label>
-              <div className="flex gap-sm">
-                <input
-                  className="input"
-                  value={accessCodeInput}
-                  onChange={(e) => setAccessCodeInput(e.target.value)}
-                  placeholder="e.g. UENR2026"
-                  maxLength={20}
-                />
-                <button className="btn btn-primary btn-sm" onClick={saveAccessCode}>
-                  Save
-                </button>
+              <div className="alert alert-info">
+                <CurrencyCircleDollar size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
+                Charged only to freshers. School-wide items are collected at verification and manual
+                registration; a department's items when that department admits the fresher.
+                Deactivate an item once the year's freshers have paid — it stays on old receipts by
+                name.
               </div>
-            </div>
-          </div>
-        </>
-      )}
 
-      {/* ═══════════ SCHOOL: Souvenirs (school catalogue only) ═══════════ */}
-      {tab === 'souvenirs' && isSchool && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <Gift size={20} /> Souvenirs
-              </h2>
-              <p className="section-desc">
-                Items given to freshers at registration and admission.
-              </p>
-            </div>
-          </div>
-
-          <div className="settings-stats">
-            <div className="settings-stat">
-              <div className="settings-stat-icon gold">
-                <Gift size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">
-                  {souvenirs.filter((s) => s.category === 'school').length}
-                </div>
-                <div className="settings-stat-label">School Souvenirs</div>
-              </div>
-            </div>
-            <div className="settings-stat">
-              <div className="settings-stat-icon navy">
-                <Building size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">
-                  {souvenirs.filter((s) => s.category === 'department').length}
-                </div>
-                <div className="settings-stat-label">Dept Souvenirs</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Gift size={16} /> School Souvenirs
-              </h3>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={openSchoolSouvenirCreate}
-              >
-                <Plus size={16} /> Add Souvenir
-              </button>
-            </div>
-            <p className="muted text-sm mb">Given to freshers at registration.</p>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Cost</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schoolSouvenirsPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan={3} className="muted">
-                        No school souvenirs yet.
-                      </td>
-                    </tr>
-                  )}
-                  {schoolSouvenirsPager.slice.map((s) => (
-                    <tr key={s.id}>
-                      <td className="fw-600">{s.name}</td>
-                      <td>GHS {Number(s.cost).toFixed(2)}</td>
-                      <td>
-                        <div className="flex gap-sm">
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openSchoolSouvenirEdit(s)}
-                          >
-                            <PencilSimple size={14} /> Edit
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => deleteSouvenir(s)}
-                          >
-                            <Trash size={14} /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={schoolSouvenirsPager.page}
-              totalPages={schoolSouvenirsPager.totalPages}
-              onPageChange={schoolSouvenirsPager.setPage}
-              totalItems={schoolSouvenirsPager.totalItems}
-              pageSize={schoolSouvenirsPager.perPage}
-            />
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Building size={16} /> Department Souvenirs
-              </h3>
-            </div>
-            <p className="muted text-sm mb">Each department manages its own list.</p>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Department</th>
-                    <th>Cost</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deptSouvenirsReadPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan={3} className="muted">
-                        No department souvenirs yet.
-                      </td>
-                    </tr>
-                  )}
-                  {deptSouvenirsReadPager.slice.map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.name}</td>
-                      <td>{s.department_name || '—'}</td>
-                      <td>GHS {Number(s.cost).toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={deptSouvenirsReadPager.page}
-              totalPages={deptSouvenirsReadPager.totalPages}
-              onPageChange={deptSouvenirsReadPager.setPage}
-              totalItems={deptSouvenirsReadPager.totalItems}
-              pageSize={deptSouvenirsReadPager.perPage}
-            />
-          </div>
-        </>
-      )}
-
-      {/* ═══════════ SCHOOL: Users / Admins ═══════════ */}
-      {tab === 'admins' && isSchool && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <Users size={20} /> User Management
-              </h2>
-              <p className="section-desc">
-                School staff for registration and department admins.
-              </p>
-            </div>
-          </div>
-
-          <div className="settings-stats">
-            <div className="settings-stat">
-              <div className="settings-stat-icon gold">
-                <Crown size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">{schoolAdmins.length}</div>
-                <div className="settings-stat-label">School Staff</div>
-              </div>
-            </div>
-            <div className="settings-stat">
-              <div className="settings-stat-icon navy">
-                <Users size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">{admins.length}</div>
-                <div className="settings-stat-label">Dept Admins</div>
-              </div>
-            </div>
-            <div className="settings-stat">
-              <div className="settings-stat-icon green">
-                <Building size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">
-                  {departments.filter((d) => admins.some((a) => a.department_id === d.id)).length}
-                </div>
-                <div className="settings-stat-label">Covered Depts</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Crown size={16} /> School Staff
-              </h3>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={openSchoolStaffCreate}
-              >
-                <Plus size={16} /> Create Account
-              </button>
-            </div>
-            <div className="alert alert-info" style={{ marginBottom: 16 }}>
-              <Users size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
-              Give each person at the School office their own <strong>School Staff</strong> account
-              (different name + email). They can only see{' '}
-              <em>Register Freshers, All Students, Receipts, Verify</em> — the main School Admin
-              keeps all pages. The audit log then shows <em>who</em> registered which fresher by
-              name.
-            </div>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Created</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schoolAdminPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="muted">
-                        No school staff yet.
-                      </td>
-                    </tr>
-                  )}
-                  {schoolAdminPager.slice.map((a) => (
-                    <tr key={a.id}>
-                      <td className="fw-600">
-                        {a.name}{' '}
-                        {a.id === user?.id && (
-                          <span className="badge badge-navy" style={{ marginLeft: 8 }}>
-                            You
-                          </span>
+              {isSchool && (
+                <div className="settings-panel">
+                  <div className="settings-panel-head">
+                    <h3>School-Wide Items</h3>
+                  </div>
+                  <div className="table-wrap">
+                    <table className="table settings-table">
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          <th>Amount</th>
+                          <th>Status</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {schoolWideDuesItems.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="muted">
+                              No school-wide dues items yet. These are collected from every fresher
+                              at verification and manual registration; each department adds its own
+                              items in its settings.
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td>{a.email}</td>
-                      <td className="text-sm muted">
-                        {a.created_at ? new Date(a.created_at).toLocaleDateString() : '—'}
-                      </td>
-                      <td>
-                        <div className="flex gap-sm">
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openSchoolStaffEdit(a)}
-                          >
-                            <PencilSimple size={14} /> Edit
-                          </button>
-                          {a.id !== user?.id && (
-                            <button
-                              className="btn btn-danger btn-sm"
-                              onClick={() => deleteSchoolAdmin(a)}
-                            >
-                              <Trash size={14} /> Delete
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={schoolAdminPager.page}
-              totalPages={schoolAdminPager.totalPages}
-              onPageChange={schoolAdminPager.setPage}
-              totalItems={schoolAdminPager.totalItems}
-              pageSize={schoolAdminPager.perPage}
-            />
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Users size={16} /> Department Admins
-              </h3>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={openAdminCreate}
-              >
-                <Plus size={16} /> Create Admin
-              </button>
-            </div>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Department</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {adminPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="muted">
-                        No department admins yet.
-                      </td>
-                    </tr>
-                  )}
-                  {adminPager.slice.map((a) => (
-                    <tr key={a.id}>
-                      <td className="fw-600">{a.name}</td>
-                      <td>{a.email}</td>
-                      <td>{a.department_name || '-'}</td>
-                      <td>
-                        <div className="flex gap-sm">
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openAdminEdit(a)}
-                          >
-                            <PencilSimple size={14} /> Edit
-                          </button>
-                          <button className="btn btn-danger btn-sm" onClick={() => deleteAdmin(a)}>
-                            <Trash size={14} /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={adminPager.page}
-              totalPages={adminPager.totalPages}
-              onPageChange={adminPager.setPage}
-              totalItems={adminPager.totalItems}
-              pageSize={adminPager.perPage}
-            />
-          </div>
-        </>
-      )}
-
-      {/* ═══════════ DEPT: My Department (dept admin configures dues + PIN) ═══════════ */}
-      {tab === 'my-dept' && !isSchool && myDept && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <Building size={20} /> My Department
-              </h2>
-              <p className="section-desc">
-                Configure dues, collector PIN, and access code for {myDept.name}.
-              </p>
-            </div>
-          </div>
-
-          <div className="settings-stats">
-            <div className="settings-stat">
-              <div className="settings-stat-icon gold">
-                <Crown size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">
-                  GHS {Number(deptDuesInput || 0).toFixed(0)}
+                        {schoolWideDuesItems.map((i) => (
+                          <tr key={i.id}>
+                            <td className="fw-600">
+                              {i.name}
+                              {i.gender && i.gender !== 'any' && (
+                                <span className="badge badge-gold" style={{ marginLeft: 8 }}>
+                                  {i.gender}-only
+                                </span>
+                              )}
+                            </td>
+                            <td>GHS {Number(i.amount).toFixed(2)}</td>
+                            <td>
+                              <span className={`badge ${i.active ? 'badge-green' : 'badge-red'}`}>
+                                {i.active ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="flex gap-sm">
+                                <button
+                                  className="btn btn-outline btn-xs"
+                                  onClick={() => openDuesItemEdit(i)}
+                                  title="Edit item"
+                                >
+                                  <PencilSimple size={13} />
+                                </button>
+                                <button
+                                  className={`btn btn-xs ${i.active ? 'btn-danger' : 'btn-outline'}`}
+                                  onClick={() => toggleDuesItem(i)}
+                                  title={i.active ? 'Deactivate item' : 'Reactivate item'}
+                                >
+                                  {i.active ? 'Deactivate' : 'Activate'}
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-xs"
+                                  onClick={() => deleteDuesItem(i)}
+                                  title="Delete item (only if never charged)"
+                                >
+                                  <Trash size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <div className="settings-stat-label">Dept Dues</div>
-              </div>
-            </div>
-            <div className="settings-stat">
-              <div className={`settings-stat-icon ${myDept.pin_set ? 'green' : 'red'}`}>
-                <LockKey size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">{myDept.pin_set ? 'Set' : 'None'}</div>
-                <div className="settings-stat-label">Collector PIN</div>
-              </div>
-            </div>
-            <div className="settings-stat">
-              <div className="settings-stat-icon navy">
-                <Books size={20} />
-              </div>
-              <div>
-                <div className="settings-stat-value">{classes.length}</div>
-                <div className="settings-stat-label">Classes</div>
-              </div>
-            </div>
-          </div>
+              )}
 
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Crown size={16} /> Dues &amp; Department
-              </h3>
-            </div>
-            <div className="grid grid-2">
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Department</label>
-                <input className="input" value={myDept.name} disabled />
+              {!isSchool && (
+                <>
+                  <div className="settings-panel">
+                    <div className="settings-panel-head">
+                      <h3>Your Department's Items</h3>
+                      <span className="badge badge-navy">{ownDuesItems.length}</span>
+                    </div>
+                    <div className="table-wrap">
+                      <table className="table settings-table">
+                        <thead>
+                          <tr>
+                            <th>Item</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ownDuesItems.length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="muted">
+                                No additional dues yet. Add the levies your department charges
+                                freshers at verification.
+                              </td>
+                            </tr>
+                          )}
+                          {ownDuesItems.map((i) => (
+                            <tr key={i.id}>
+                              <td className="fw-600">
+                                {i.name}
+                                {i.gender && i.gender !== 'any' && (
+                                  <span className="badge badge-gold" style={{ marginLeft: 8 }}>
+                                    {i.gender}-only
+                                  </span>
+                                )}
+                              </td>
+                              <td>GHS {Number(i.amount).toFixed(2)}</td>
+                              <td>
+                                <span className={`badge ${i.active ? 'badge-green' : 'badge-red'}`}>
+                                  {i.active ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                              <td>
+                                <div className="flex gap-sm">
+                                  <button
+                                    className="btn btn-outline btn-xs"
+                                    onClick={() => openDuesItemEdit(i)}
+                                    title="Edit item"
+                                  >
+                                    <PencilSimple size={13} />
+                                  </button>
+                                  <button
+                                    className={`btn btn-xs ${i.active ? 'btn-danger' : 'btn-outline'}`}
+                                    onClick={() => toggleDuesItem(i)}
+                                    title={i.active ? 'Deactivate item' : 'Reactivate item'}
+                                  >
+                                    {i.active ? 'Deactivate' : 'Activate'}
+                                  </button>
+                                  <button
+                                    className="btn btn-danger btn-xs"
+                                    onClick={() => deleteDuesItem(i)}
+                                    title="Delete item (only if never charged)"
+                                  >
+                                    <Trash size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {/* ═══════════ SCHOOL: Pre-Registration (freshers at home) ═══════════ */}
+          {tab === 'prereg' && isSchool && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>Pre-Registration</h2>
+                  <p className="section-desc">
+                    Share the form link and access code with freshers still at home.
+                  </p>
+                </div>
               </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Department Dues (GHS per year)</label>
-                <div className="flex gap-sm">
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={deptDuesInput}
-                    onChange={(e) => setDeptDuesInput(e.target.value)}
-                  />
-                  <button className="btn btn-primary btn-sm" onClick={saveDeptDues}>
-                    Save
+
+              <div className="settings-panel">
+                <h3 style={{ marginBottom: 16 }}>
+                  <PaperPlaneTilt size={16} style={{ marginRight: 8, verticalAlign: -3 }} />
+                  Form Link & Access Code
+                </h3>
+                <p className="muted text-sm mb">
+                  Submissions appear under <strong>Freshers → Pre-Registrations</strong>.
+                </p>
+                <div className="mb">
+                  <label className="text-sm fw-600" style={{ display: 'block', marginBottom: 6 }}>
+                    Form Link
+                  </label>
+                  <div className="flex gap-sm align-center" style={{ flexWrap: 'wrap' }}>
+                    <span
+                      className="code-cell"
+                      style={{ flex: '1 1 260px', wordBreak: 'break-all' }}
+                    >
+                      {`${window.location.origin}/apply`}
+                    </span>
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() =>
+                        copyText(`${window.location.origin}/apply`, 'Pre-registration link')
+                      }
+                    >
+                      <Copy size={14} /> Copy link
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ═══════════ SCHOOL: Souvenirs (school catalogue only) ═══════════ */}
+          {tab === 'souvenirs' && isSchool && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>Souvenirs</h2>
+                  <p className="section-desc">
+                    Items given to freshers at registration and admission.
+                  </p>
+                </div>
+              </div>
+
+              <div className="settings-stats">
+                <div className="settings-stat">
+                  <div className="settings-stat-icon gold">
+                    <Gift size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">
+                      {souvenirs.filter((s) => s.category === 'school').length}
+                    </div>
+                    <div className="settings-stat-label">School Souvenirs</div>
+                  </div>
+                </div>
+                <div className="settings-stat">
+                  <div className="settings-stat-icon navy">
+                    <Building size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">
+                      {souvenirs.filter((s) => s.category === 'department').length}
+                    </div>
+                    <div className="settings-stat-label">Dept Souvenirs</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>School Souvenirs</h3>
+                  <button className="btn btn-primary btn-sm" onClick={openSchoolSouvenirCreate}>
+                    <Plus size={16} /> Add Souvenir
                   </button>
                 </div>
-                <span className="muted text-xs">
-                  Charged to every student in {myDept.name} and pre-filled when you admit freshers or
-                  record dues collections.
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <LockKey size={16} /> Collector PIN
-              </h3>
-              {myDept.pin_set && (
-                <span className="badge badge-green">Set</span>
-              )}
-            </div>
-            <p className="muted text-sm mb">
-              Reps enter this PIN once per session (8 hours) before they can record any payment.
-              Without it, a leaked department code alone is not enough to record dues.
-            </p>
-            <div className="flex gap-sm" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <div className="field" style={{ flex: '0 1 260px', marginBottom: 0 }}>
-                <label>New PIN (4–8 digits)</label>
-                <input
-                  className="input"
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={8}
-                  placeholder="••••"
-                  value={repPinInput}
-                  onChange={(e) => setRepPinInput(e.target.value.replace(/\D/g, ''))}
+                <p className="muted text-sm mb">Given to freshers at registration.</p>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schoolSouvenirsPager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan={2} className="muted">
+                            No school souvenirs yet.
+                          </td>
+                        </tr>
+                      )}
+                      {schoolSouvenirsPager.slice.map((s) => (
+                        <tr key={s.id}>
+                          <td className="fw-600">{s.name}</td>
+                          <td>
+                            <div className="flex gap-sm">
+                              <button
+                                className="btn btn-outline btn-sm"
+                                onClick={() => openSchoolSouvenirEdit(s)}
+                              >
+                                <PencilSimple size={14} /> Edit
+                              </button>
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => deleteSouvenir(s)}
+                              >
+                                <Trash size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={schoolSouvenirsPager.page}
+                  totalPages={schoolSouvenirsPager.totalPages}
+                  onPageChange={schoolSouvenirsPager.setPage}
+                  totalItems={schoolSouvenirsPager.totalItems}
+                  pageSize={schoolSouvenirsPager.perPage}
                 />
               </div>
-              <div className="flex gap-sm" style={{ marginBottom: 0 }}>
-                <button className="btn btn-primary btn-sm" onClick={saveRepPin}>
-                  <LockKey size={14} /> Save PIN
-                </button>
-                {myDept.pin_set && (
-                  <button className="btn btn-danger btn-sm" onClick={removeRepPin}>
-                    Remove PIN
-                  </button>
+
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>Department Souvenirs</h3>
+                </div>
+                <p className="muted text-sm mb">Each department manages its own list.</p>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Department</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deptSouvenirsReadPager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan={2} className="muted">
+                            No department souvenirs yet.
+                          </td>
+                        </tr>
+                      )}
+                      {deptSouvenirsReadPager.slice.map((s) => (
+                        <tr key={s.id}>
+                          <td>{s.name}</td>
+                          <td>{s.department_name || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={deptSouvenirsReadPager.page}
+                  totalPages={deptSouvenirsReadPager.totalPages}
+                  onPageChange={deptSouvenirsReadPager.setPage}
+                  totalItems={deptSouvenirsReadPager.totalItems}
+                  pageSize={deptSouvenirsReadPager.perPage}
+                />
+              </div>
+            </>
+          )}
+
+          {/* ═══════════ SCHOOL: Users / Admins ═══════════ */}
+          {tab === 'admins' && isSchool && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>User Management</h2>
+                  <p className="section-desc">
+                    {isSuper
+                      ? 'Every account: school staff, department admins, department staff and super admins.'
+                      : 'School staff for registration and department admins.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="settings-stats">
+                <div className="settings-stat">
+                  <div className="settings-stat-icon gold">
+                    <Crown size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">{schoolAdmins.length}</div>
+                    <div className="settings-stat-label">School Staff</div>
+                  </div>
+                </div>
+                <div className="settings-stat">
+                  <div className="settings-stat-icon navy">
+                    <Users size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">{admins.length}</div>
+                    <div className="settings-stat-label">Dept Admins</div>
+                  </div>
+                </div>
+                <div className="settings-stat">
+                  <div className="settings-stat-icon green">
+                    <Building size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">
+                      {
+                        departments.filter((d) => admins.some((a) => a.department_id === d.id))
+                          .length
+                      }
+                    </div>
+                    <div className="settings-stat-label">Covered Depts</div>
+                  </div>
+                </div>
+                {isSuper && (
+                  <div className="settings-stat">
+                    <div className="settings-stat-icon gold">
+                      <Users size={20} />
+                    </div>
+                    <div>
+                      <div className="settings-stat-value">{deptStaff.length}</div>
+                      <div className="settings-stat-label">Dept Staff</div>
+                    </div>
+                  </div>
                 )}
               </div>
-            </div>
-          </div>
 
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <PaperPlaneTilt size={16} /> Rep Access Code
-              </h3>
-            </div>
-            <p className="muted text-sm mb">
-              Share this code with your class representatives — they open the collection page with
-              it, then enter the PIN above to record.
-            </p>
-            <div className="flex gap-sm align-center">
-              <span className="code-cell">{myDept.code}</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => copyCode(myDept.code)}>
-                <Copy size={13} />
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>School Staff</h3>
+                  <button className="btn btn-primary btn-sm" onClick={openSchoolStaffCreate}>
+                    <Plus size={16} /> Create Account
+                  </button>
+                </div>
+                <div className="alert alert-info" style={{ marginBottom: 16 }}>
+                  <Users size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
+                  Give each person at the School office their own <strong>School Staff</strong>{' '}
+                  account (different name + email). They can only see{' '}
+                  <em>Register Freshers and Verify Receipt</em> — the main School Admin keeps all
+                  pages. The audit log then shows <em>who</em> registered which fresher by name.
+                </div>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th className="hide-sm">Created</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schoolAdminPager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="muted">
+                            No school staff yet.
+                          </td>
+                        </tr>
+                      )}
+                      {schoolAdminPager.slice.map((a) => (
+                        <tr key={a.id}>
+                          <td className="fw-600">
+                            {a.name}{' '}
+                            {a.id === user?.id && (
+                              <span className="badge badge-navy" style={{ marginLeft: 8 }}>
+                                You
+                              </span>
+                            )}
+                          </td>
+                          <td>{a.email}</td>
+                          <td className="text-sm muted hide-sm">{formatShortDate(a.created_at)}</td>
+                          <td>
+                            <div className="flex gap-sm">
+                              <button
+                                className="btn btn-outline btn-sm"
+                                onClick={() => openSchoolStaffEdit(a)}
+                              >
+                                <PencilSimple size={14} /> Edit
+                              </button>
+                              {a.id !== user?.id && (
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => deleteSchoolAdmin(a)}
+                                >
+                                  <Trash size={14} /> Delete
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={schoolAdminPager.page}
+                  totalPages={schoolAdminPager.totalPages}
+                  onPageChange={schoolAdminPager.setPage}
+                  totalItems={schoolAdminPager.totalItems}
+                  pageSize={schoolAdminPager.perPage}
+                />
+              </div>
 
-      {/* ═══════════ DEPT: Souvenirs (dept admin configures own) ═══════════ */}
-      {tab === 'souvenirs' && !isSchool && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <Gift size={20} /> Department Souvenirs
-              </h2>
-              <p className="section-desc">
-                Items {user?.department_name} gives to freshers at admission.
-              </p>
-            </div>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Gift size={16} /> Your Souvenirs
-              </h3>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={openDeptSouvenirCreate}
-              >
-                <Plus size={16} /> Add Souvenir
-              </button>
-            </div>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Cost</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deptOwnSouvPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan="3" className="muted">
-                        No souvenirs yet. Add the items your department hands out at fresher
-                        admission.
-                      </td>
-                    </tr>
-                  )}
-                  {deptOwnSouvPager.slice.map((s) => (
-                    <tr key={s.id}>
-                      <td className="fw-600">{s.name}</td>
-                      <td>GHS {Number(s.cost).toFixed(2)}</td>
-                      <td>
-                        <div className="flex gap-sm">
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openDeptSouvenirEdit(s)}
-                          >
-                            <PencilSimple size={14} /> Edit
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => deleteSouvenir(s)}
-                          >
-                            <Trash size={14} /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={deptOwnSouvPager.page}
-              totalPages={deptOwnSouvPager.totalPages}
-              onPageChange={deptOwnSouvPager.setPage}
-              totalItems={deptOwnSouvPager.totalItems}
-              pageSize={deptOwnSouvPager.perPage}
-            />
-          </div>
-        </>
-      )}
-
-      {/* ═══════════ DEPT: Classes ═══════════ */}
-      {tab === 'classes' && !isSchool && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <Books size={20} /> Classes / Levels
-              </h2>
-              <p className="section-desc">
-                Organise your students by class or level — a class can be a whole level (e.g.{' '}
-                <strong>Level 200</strong>) or a stream within a level (e.g.{' '}
-                <strong>Level 100 A</strong>).
-              </p>
-            </div>
-            <button className="btn btn-primary" onClick={openClassCreate}>
-              <Plus size={16} /> Add Class
-            </button>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Books size={16} /> Your Classes
-              </h3>
-              <span className="badge badge-navy">{classes.length} total</span>
-            </div>
-            <p className="muted text-sm mb">Names must be unique in your department.</p>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Class</th>
-                    <th>Level</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {classPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan="3" className="muted">
-                        No classes yet. Add your first class/level above.
-                      </td>
-                    </tr>
-                  )}
-                  {classPager.slice.map((c) => (
-                    <tr key={c.id}>
-                      <td className="fw-600">{c.name}</td>
-                      <td>
-                        <span className="badge badge-gray">{c.level}</span>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div className="flex gap-sm" style={{ justifyContent: 'flex-end' }}>
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openClassEdit(c)}
-                          >
-                            <PencilSimple size={14} /> Edit
-                          </button>
-                          <button className="btn btn-danger btn-sm" onClick={() => deleteClass(c)}>
-                            <Trash size={14} /> Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={classPager.page}
-              totalPages={classPager.totalPages}
-              onPageChange={classPager.setPage}
-              totalItems={classPager.totalItems}
-              pageSize={classPager.perPage}
-            />
-          </div>
-        </>
-      )}
-
-      {/* ═══════════ DEPT: Staff ═══════════ */}
-      {tab === 'staff' && !isSchool && (
-        <>
-          <div className="settings-section-head">
-            <div>
-              <h2>
-                <Users size={20} /> Department Staff
-              </h2>
-              <p className="section-desc">
-                Give your team their own <strong>Department Staff</strong> account. They can admit
-                freshers, view students and receipts, and verify receipts — all limited to{' '}
-                {user?.department_name}.
-              </p>
-            </div>
-            <button className="btn btn-primary" onClick={openDeptStaffCreate}>
-              <Plus size={16} /> Create Staff
-            </button>
-          </div>
-
-          <div className="settings-panel">
-            <div className="settings-panel-head">
-              <h3>
-                <Users size={16} /> Staff Accounts
-              </h3>
-              <span className="badge badge-navy">{deptStaff.length} total</span>
-            </div>
-            <div className="alert alert-info" style={{ marginBottom: 16 }}>
-              <Users size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
-              Staff cannot change dues, settings, classes, or collect payments. They only help with
-              admitting freshers and checking students and receipts.
-            </div>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Created</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deptStaffPager.slice.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="muted">
-                        No department staff yet. Create one to help with admissions.
-                      </td>
-                    </tr>
-                  )}
-                  {deptStaffPager.slice.map((a) => (
-                    <tr key={a.id}>
-                      <td className="fw-600">
-                        {a.name}{' '}
-                        {a.id === user?.id && (
-                          <span className="badge badge-navy" style={{ marginLeft: 8 }}>
-                            You
-                          </span>
+              {isSuper && (
+                <div className="settings-panel">
+                  <div className="settings-panel-head">
+                    <h3>Super Admins</h3>
+                    <button className="btn btn-primary btn-sm" onClick={openSuperAdminCreate}>
+                      <Plus size={16} /> Create Super Admin
+                    </button>
+                  </div>
+                  <div className="alert alert-info" style={{ marginBottom: 16 }}>
+                    <Crown size={16} style={{ marginRight: 6, verticalAlign: -3 }} />A{' '}
+                    <strong>Super Admin</strong> has every School Admin power plus the five
+                    privileged actions: resend receipt emails, correct or reopen fresher
+                    applications, force-delete a student with its receipts, and manage other super
+                    admin accounts. Only a super admin can create or edit these accounts.
+                  </div>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th className="hide-sm">Created</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {superAdminPager.slice.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="muted">
+                              No super admins yet.
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td>{a.email}</td>
-                      <td className="text-sm muted">
-                        {a.created_at ? new Date(a.created_at).toLocaleDateString() : '—'}
-                      </td>
-                      <td>
-                        <div className="flex gap-sm">
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openDeptStaffEdit(a)}
-                          >
-                            <PencilSimple size={14} /> Edit
-                          </button>
-                          {a.id !== user?.id && (
-                            <button
-                              className="btn btn-danger btn-sm"
-                              onClick={() => deleteDeptStaff(a)}
-                            >
-                              <Trash size={14} /> Delete
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={deptStaffPager.page}
-              totalPages={deptStaffPager.totalPages}
-              onPageChange={deptStaffPager.setPage}
-              totalItems={deptStaffPager.totalItems}
-              pageSize={deptStaffPager.perPage}
-            />
-          </div>
-        </>
-      )}
+                        {superAdminPager.slice.map((a) => (
+                          <tr key={a.id}>
+                            <td className="fw-600">
+                              {a.name}{' '}
+                              {a.id === user?.id && (
+                                <span className="badge badge-navy" style={{ marginLeft: 8 }}>
+                                  You
+                                </span>
+                              )}
+                            </td>
+                            <td>{a.email}</td>
+                            <td className="text-sm muted hide-sm">
+                              {formatShortDate(a.created_at)}
+                            </td>
+                            <td>
+                              <div className="flex gap-sm">
+                                <button
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => openSuperAdminEdit(a)}
+                                >
+                                  <PencilSimple size={14} /> Edit
+                                </button>
+                                {a.id !== user?.id && (
+                                  <button
+                                    className="btn btn-danger btn-sm"
+                                    onClick={() => deleteSuperAdmin(a)}
+                                  >
+                                    <Trash size={14} /> Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Pagination
+                    page={superAdminPager.page}
+                    totalPages={superAdminPager.totalPages}
+                    onPageChange={superAdminPager.setPage}
+                    totalItems={superAdminPager.totalItems}
+                    pageSize={superAdminPager.perPage}
+                  />
+                </div>
+              )}
 
-      {/* ═══════════ MODALS ═══════════ */}
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>Department Admins</h3>
+                  <button className="btn btn-primary btn-sm" onClick={openAdminCreate}>
+                    <Plus size={16} /> Create Admin
+                  </button>
+                </div>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Department</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminPager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="muted">
+                            No department admins yet.
+                          </td>
+                        </tr>
+                      )}
+                      {adminPager.slice.map((a) => (
+                        <tr key={a.id}>
+                          <td className="fw-600">{a.name}</td>
+                          <td>{a.email}</td>
+                          <td>{a.department_name || '-'}</td>
+                          <td>
+                            <div className="flex gap-sm">
+                              <button
+                                className="btn btn-outline btn-sm"
+                                onClick={() => openAdminEdit(a)}
+                              >
+                                <PencilSimple size={14} /> Edit
+                              </button>
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => deleteAdmin(a)}
+                              >
+                                <Trash size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={adminPager.page}
+                  totalPages={adminPager.totalPages}
+                  onPageChange={adminPager.setPage}
+                  totalItems={adminPager.totalItems}
+                  pageSize={adminPager.perPage}
+                />
+              </div>
 
-      <Modal
-        open={showDeptModal}
-        onClose={() => setShowDeptModal(false)}
-        title={editingDept ? 'Edit Department' : 'Add Department'}
-        subtitle={
-          editingDept
-            ? 'Update the department name. Its dues amount is set by the department admin.'
-            : 'Create a new department. Its admin will set the department dues amount.'
-        }
-        icon={<Building size={20} />}
-      >
-        <form onSubmit={saveDept}>
-          <div className="field">
-            <label>Department Name *</label>
-            <input
-              className="input"
-              value={deptForm.name}
-              onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
-              placeholder="e.g. Computer Science"
-              required
-            />
-          </div>
-          <div className="modal-actions">
-            <button className="btn btn-outline" type="button" onClick={() => setShowDeptModal(false)}>
-              Cancel
-            </button>
-            <button className="btn btn-primary" type="submit">
-              {editingDept ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
-              {editingDept ? 'Save Changes' : 'Add Department'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+              {isSuper && (
+                <div className="settings-panel">
+                  <div className="settings-panel-head">
+                    <h3>Department Staff</h3>
+                    <span className="badge badge-navy">{deptStaff.length} total</span>
+                  </div>
+                  <div className="alert alert-info" style={{ marginBottom: 16 }}>
+                    <Users size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
+                    Every <strong>Department Staff</strong> account across all departments. Each one
+                    works only inside their own department — admit freshers, view receipts, verify.
+                  </div>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th>Department</th>
+                          <th className="hide-sm">Created</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {deptStaffPager.slice.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="muted">
+                              No department staff yet.
+                            </td>
+                          </tr>
+                        )}
+                        {deptStaffPager.slice.map((a) => (
+                          <tr key={a.id}>
+                            <td className="fw-600">{a.name}</td>
+                            <td>{a.email}</td>
+                            <td>{a.department_name || '-'}</td>
+                            <td className="text-sm muted hide-sm">
+                              {formatShortDate(a.created_at)}
+                            </td>
+                            <td>
+                              <div className="flex gap-sm">
+                                <button
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => openDeptStaffEdit(a)}
+                                >
+                                  <PencilSimple size={14} /> Edit
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => deleteDeptStaff(a)}
+                                >
+                                  <Trash size={14} /> Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Pagination
+                    page={deptStaffPager.page}
+                    totalPages={deptStaffPager.totalPages}
+                    onPageChange={deptStaffPager.setPage}
+                    totalItems={deptStaffPager.totalItems}
+                    pageSize={deptStaffPager.perPage}
+                  />
+                </div>
+              )}
+            </>
+          )}
 
-      <Modal
-        open={showSchoolSouvenirModal}
-        onClose={() => setShowSchoolSouvenirModal(false)}
-        title={editingSchoolSouvenir ? 'Edit School Souvenir' : 'Add School Souvenir'}
-        subtitle="Add an item to the school souvenir catalogue given at registration."
-        icon={<Gift size={20} />}
-      >
-        <form onSubmit={saveSchoolSouvenir}>
-          <div className="field">
-            <label>Name *</label>
-            <input
-              className="input"
-              value={schoolSouvenirForm.name}
-              onChange={(e) =>
-                setSchoolSouvenirForm({ ...schoolSouvenirForm, name: e.target.value })
-              }
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Cost (GHS)</label>
-            <input
-              className="input"
-              type="number"
-              step="0.01"
-              min="0"
-              value={schoolSouvenirForm.cost}
-              onChange={(e) =>
-                setSchoolSouvenirForm({ ...schoolSouvenirForm, cost: e.target.value })
-              }
-            />
-          </div>
-          <div className="modal-actions">
-            <button
-              className="btn btn-outline"
-              type="button"
-              onClick={() => setShowSchoolSouvenirModal(false)}
-            >
-              Cancel
-            </button>
-            <button className="btn btn-primary" type="submit">
-              {editingSchoolSouvenir ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
-              {editingSchoolSouvenir ? 'Save Changes' : 'Add Souvenir'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+          {/* ═══════════ DEPT: My Department (dept admin configures dues + PIN) ═══════════ */}
+          {tab === 'my-dept' && !isSchool && myDept && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>My Department</h2>
+                  <p className="section-desc">
+                    Configure dues and access code for {myDept.name}.
+                  </p>
+                </div>
+              </div>
 
-      <Modal
-        open={showSchoolStaffModal}
-        onClose={() => setShowSchoolStaffModal(false)}
-        title={editingSchoolStaff ? 'Edit School Staff' : 'Create School Staff'}
-        subtitle="Limited account for registration — they can only see Register Freshers, All Students, Verify."
-        icon={<Crown size={20} />}
-      >
-        <form onSubmit={saveSchoolAdmin}>
-          <div className="field">
-            <label>Full Name *</label>
-            <input
-              className="input"
-              value={schoolAdminForm.name}
-              onChange={(e) =>
-                setSchoolAdminForm({ ...schoolAdminForm, name: e.target.value })
-              }
-              placeholder="e.g. Ama Mensah"
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Email *</label>
-            <input
-              className="input"
-              type="email"
-              value={schoolAdminForm.email}
-              onChange={(e) =>
-                setSchoolAdminForm({ ...schoolAdminForm, email: e.target.value })
-              }
-              placeholder="e.g. ama.mensah@sciences.uenr.edu.gh"
-              required
-            />
-          </div>
-          <div className="field">
-            <label>{editingSchoolStaff ? 'New Password (leave blank to keep)' : 'Password *'}</label>
-            <PasswordInput
-              value={schoolAdminForm.password}
-              onChange={(e) =>
-                setSchoolAdminForm({ ...schoolAdminForm, password: e.target.value })
-              }
-              required={!editingSchoolStaff}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="modal-actions">
-            <button
-              className="btn btn-outline"
-              type="button"
-              onClick={() => setShowSchoolStaffModal(false)}
-            >
-              Cancel
-            </button>
-            <button className="btn btn-primary" type="submit">
-              {editingSchoolStaff ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
-              {editingSchoolStaff ? 'Save Changes' : 'Create School Staff'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+              <div className="settings-stats">
+                <div className="settings-stat">
+                  <div className="settings-stat-icon gold">
+                    <Crown size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">
+                      GHS {Number(deptDuesInput || 0).toFixed(0)}
+                    </div>
+                    <div className="settings-stat-label">Dept Dues</div>
+                  </div>
+                </div>
+                <div className="settings-stat">
+                  <div className="settings-stat-icon navy">
+                    <Books size={20} />
+                  </div>
+                  <div>
+                    <div className="settings-stat-value">{myDept?.code || '—'}</div>
+                    <div className="settings-stat-label">Rep Code</div>
+                  </div>
+                </div>
+              </div>
 
-      <Modal
-        open={showDeptStaffModal}
-        onClose={() => setShowDeptStaffModal(false)}
-        title={editingDeptStaff ? 'Edit Department Staff' : 'Create Department Staff'}
-        subtitle={`Limited account for ${user?.department_name} — Admit Freshers, Students, Receipts, and Verify.`}
-        icon={<Users size={20} />}
-      >
-        <form onSubmit={saveDeptStaff}>
-          <div className="field">
-            <label>Full Name *</label>
-            <input
-              className="input"
-              value={deptStaffForm.name}
-              onChange={(e) => setDeptStaffForm({ ...deptStaffForm, name: e.target.value })}
-              placeholder="e.g. Ama Mensah"
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Email *</label>
-            <input
-              className="input"
-              type="email"
-              value={deptStaffForm.email}
-              onChange={(e) => setDeptStaffForm({ ...deptStaffForm, email: e.target.value })}
-              placeholder="e.g. ama.mensah@sciences.uenr.edu.gh"
-              required
-            />
-          </div>
-          <div className="field">
-            <label>{editingDeptStaff ? 'New Password (leave blank to keep)' : 'Password *'}</label>
-            <PasswordInput
-              value={deptStaffForm.password}
-              onChange={(e) => setDeptStaffForm({ ...deptStaffForm, password: e.target.value })}
-              required={!editingDeptStaff}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="modal-actions">
-            <button
-              className="btn btn-outline"
-              type="button"
-              onClick={() => setShowDeptStaffModal(false)}
-            >
-              Cancel
-            </button>
-            <button className="btn btn-primary" type="submit">
-              {editingDeptStaff ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
-              {editingDeptStaff ? 'Save Changes' : 'Create Staff'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>Dues &amp; Department</h3>
+                </div>
+                <div className="grid grid-2">
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Department</label>
+                    <input className="input" value={myDept.name} disabled />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Department Dues (GHS per year)</label>
+                    <div className="flex gap-sm">
+                      <input
+                        className="input"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={deptDuesInput}
+                        onChange={(e) => setDeptDuesInput(e.target.value)}
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={saveDeptDues}>
+                        Save
+                      </button>
+                    </div>
+                    <span className="muted text-xs">
+                      Charged to every student in {myDept.name} and pre-filled when you admit
+                      freshers or record dues collections.
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-      <Modal
-        open={showDeptAdminModal}
-        onClose={() => setShowDeptAdminModal(false)}
-        title={editingAdmin ? 'Edit Department Admin' : 'Create Department Admin'}
-        subtitle="Full admin access to their own department — dues, classes, students, and souvenirs."
-        icon={<Users size={20} />}
-      >
-        <form onSubmit={saveAdmin}>
-          <div className="field">
-            <label>Full Name *</label>
-            <input
-              className="input"
-              value={adminForm.name}
-              onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Email *</label>
-            <input
-              className="input"
-              type="email"
-              value={adminForm.email}
-              onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
-              required
-            />
-          </div>
-          <div className="field">
-            <label>{editingAdmin ? 'New Password (leave blank to keep)' : 'Password *'}</label>
-            <PasswordInput
-              value={adminForm.password}
-              onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
-              required={!editingAdmin}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="field">
-            <label>Department *</label>
-            <Select
-              value={adminForm.department_id}
-              onChange={(v) => setAdminForm({ ...adminForm, department_id: v })}
-              options={deptOptions}
-              placeholder="Select department..."
-              required
-            />
-          </div>
-          <div className="modal-actions">
-            <button
-              className="btn btn-outline"
-              type="button"
-              onClick={() => setShowDeptAdminModal(false)}
-            >
-              Cancel
-            </button>
-            <button className="btn btn-primary" type="submit">
-              {editingAdmin ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
-              {editingAdmin ? 'Save Changes' : 'Create Admin'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>Rep Access Code</h3>
+                </div>
+                <p className="muted text-sm mb">
+                  Share this code with your class representatives — they open the collection page
+                  with it, then sign in with their course rep account.
+                </p>
+                <div className="flex gap-sm align-center">
+                  <span className="code-cell">{myDept.code}</span>
+                  <button className="btn btn-ghost btn-xs" onClick={() => copyCode(myDept.code)}>
+                    <Copy size={13} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
 
-      <Modal
-        open={showDeptSouvenirModal}
-        onClose={() => setShowDeptSouvenirModal(false)}
-        title={editingDeptSouvenir ? 'Edit Department Souvenir' : 'Add Department Souvenir'}
-        subtitle={`Add an item ${user?.department_name} gives to freshers at admission.`}
-        icon={<Gift size={20} />}
-      >
-        <form onSubmit={saveDeptSouvenir}>
-          <div className="field">
-            <label>Name *</label>
-            <input
-              className="input"
-              value={deptSouvenirForm.name}
-              onChange={(e) =>
-                setDeptSouvenirForm({ ...deptSouvenirForm, name: e.target.value })
-              }
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Cost (GHS)</label>
-            <input
-              className="input"
-              type="number"
-              step="0.01"
-              min="0"
-              value={deptSouvenirForm.cost}
-              onChange={(e) =>
-                setDeptSouvenirForm({ ...deptSouvenirForm, cost: e.target.value })
-              }
-            />
-          </div>
-          <div className="modal-actions">
-            <button
-              className="btn btn-outline"
-              type="button"
-              onClick={() => setShowDeptSouvenirModal(false)}
-            >
-              Cancel
-            </button>
-            <button className="btn btn-primary" type="submit">
-              {editingDeptSouvenir ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
-              {editingDeptSouvenir ? 'Save Changes' : 'Add Souvenir'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+          {/* ═══════════ DEPT: Souvenirs (dept admin configures own) ═══════════ */}
+          {tab === 'souvenirs' && !isSchool && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>Department Souvenirs</h2>
+                  <p className="section-desc">
+                    Items {user?.department_name} gives to freshers at admission.
+                  </p>
+                </div>
+              </div>
 
-      <Modal
-        open={showClassModal}
-        onClose={() => setShowClassModal(false)}
-        title={editingClass ? 'Edit Class / Level' : 'Add Class / Level'}
-        subtitle="A class can be a whole level or a stream within a level. Names must be unique in your department."
-        icon={<Books size={20} />}
-      >
-        <form onSubmit={saveClass}>
-          <div className="field">
-            <label>Class Name *</label>
-            <input
-              className="input"
-              value={classForm.name}
-              onChange={(e) => setClassForm({ ...classForm, name: e.target.value })}
-              placeholder="e.g. Level 200 A"
-              required
-            />
-          </div>
-          <div className="field">
-            <label>Level (optional)</label>
-            <input
-              className="input"
-              value={classForm.level}
-              onChange={(e) => setClassForm({ ...classForm, level: e.target.value })}
-              placeholder="e.g. Level 200 (defaults to class name)"
-            />
-          </div>
-          <div className="modal-actions">
-            <button
-              className="btn btn-outline"
-              type="button"
-              onClick={() => setShowClassModal(false)}
-            >
-              Cancel
-            </button>
-            <button className="btn btn-primary" type="submit">
-              {editingClass ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
-              {editingClass ? 'Save Changes' : 'Add Class'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>Your Souvenirs</h3>
+                  <button className="btn btn-primary btn-sm" onClick={openDeptSouvenirCreate}>
+                    <Plus size={16} /> Add Souvenir
+                  </button>
+                </div>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deptOwnSouvPager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan="2" className="muted">
+                            No souvenirs yet. Add the items your department hands out at fresher
+                            admission.
+                          </td>
+                        </tr>
+                      )}
+                      {deptOwnSouvPager.slice.map((s) => (
+                        <tr key={s.id}>
+                          <td className="fw-600">{s.name}</td>
+                          <td>
+                            <div className="flex gap-sm">
+                              <button
+                                className="btn btn-outline btn-sm"
+                                onClick={() => openDeptSouvenirEdit(s)}
+                              >
+                                <PencilSimple size={14} /> Edit
+                              </button>
+                              <button
+                                className="btn btn-danger btn-sm"
+                                onClick={() => deleteSouvenir(s)}
+                              >
+                                <Trash size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={deptOwnSouvPager.page}
+                  totalPages={deptOwnSouvPager.totalPages}
+                  onPageChange={deptOwnSouvPager.setPage}
+                  totalItems={deptOwnSouvPager.totalItems}
+                  pageSize={deptOwnSouvPager.perPage}
+                />
+              </div>
+            </>
+          )}
+
+          {/* ═══════════ DEPT: Staff ═══════════ */}
+          {tab === 'staff' && !isSchool && (
+            <>
+              <div className="settings-section-head">
+                <div>
+                  <h2>Department Staff</h2>
+                  <p className="section-desc">
+                    Give your team their own <strong>Department Staff</strong> account. They can
+                    admit freshers, view receipts, and verify receipts — all limited to{' '}
+                    {user?.department_name}.
+                  </p>
+                </div>
+                <button className="btn btn-primary" onClick={openDeptStaffCreate}>
+                  <Plus size={16} /> Create Staff
+                </button>
+              </div>
+
+              <div className="settings-panel">
+                <div className="settings-panel-head">
+                  <h3>Staff Accounts</h3>
+                  <span className="badge badge-navy">{deptStaff.length} total</span>
+                </div>
+                <div className="alert alert-info" style={{ marginBottom: 16 }}>
+                  <Users size={16} style={{ marginRight: 6, verticalAlign: -3 }} />
+                  Staff cannot change dues, settings, or collect payments. They only help with
+                  admitting freshers and checking receipts.
+                </div>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th className="hide-sm">Created</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deptStaffPager.slice.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="muted">
+                            No department staff yet. Create one to help with admissions.
+                          </td>
+                        </tr>
+                      )}
+                      {deptStaffPager.slice.map((a) => (
+                        <tr key={a.id}>
+                          <td className="fw-600">
+                            {a.name}{' '}
+                            {a.id === user?.id && (
+                              <span className="badge badge-navy" style={{ marginLeft: 8 }}>
+                                You
+                              </span>
+                            )}
+                          </td>
+                          <td>{a.email}</td>
+                          <td className="text-sm muted hide-sm">{formatShortDate(a.created_at)}</td>
+                          <td>
+                            <div className="flex gap-sm">
+                              <button
+                                className="btn btn-outline btn-sm"
+                                onClick={() => openDeptStaffEdit(a)}
+                              >
+                                <PencilSimple size={14} /> Edit
+                              </button>
+                              {a.id !== user?.id && (
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => deleteDeptStaff(a)}
+                                >
+                                  <Trash size={14} /> Delete
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={deptStaffPager.page}
+                  totalPages={deptStaffPager.totalPages}
+                  onPageChange={deptStaffPager.setPage}
+                  totalItems={deptStaffPager.totalItems}
+                  pageSize={deptStaffPager.perPage}
+                />
+              </div>
+            </>
+          )}
+
+          {/* ═══════════ MODALS ═══════════ */}
+
+          <Modal
+            open={showDeptModal}
+            onClose={() => setShowDeptModal(false)}
+            title={editingDept ? 'Edit Department' : 'Add Department'}
+            subtitle={
+              editingDept
+                ? 'Update the department name. Its dues amount is set by the department admin.'
+                : 'Create a new department. Its admin will set the department dues amount.'
+            }
+            icon={<Building size={20} />}
+          >
+            <form onSubmit={saveDept}>
+              <div className="field">
+                <label>Department Name *</label>
+                <input
+                  className="input"
+                  value={deptForm.name}
+                  onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
+                  placeholder="e.g. Computer Science"
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowDeptModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingDept ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving ? 'Saving…' : editingDept ? 'Save Changes' : 'Add Department'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          <Modal
+            open={showSchoolSouvenirModal}
+            onClose={() => setShowSchoolSouvenirModal(false)}
+            title={editingSchoolSouvenir ? 'Edit School Souvenir' : 'Add School Souvenir'}
+            subtitle="Add an item to the school souvenir catalogue given at registration."
+            icon={<Gift size={20} />}
+          >
+            <form onSubmit={saveSchoolSouvenir}>
+              <div className="field">
+                <label>Name *</label>
+                <input
+                  className="input"
+                  value={schoolSouvenirForm.name}
+                  onChange={(e) =>
+                    setSchoolSouvenirForm({ ...schoolSouvenirForm, name: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowSchoolSouvenirModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingSchoolSouvenir ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving
+                    ? 'Saving…'
+                    : editingSchoolSouvenir
+                      ? 'Save Changes'
+                      : 'Add Souvenir'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          <Modal
+            open={showSchoolStaffModal}
+            onClose={() => setShowSchoolStaffModal(false)}
+            title={editingSchoolStaff ? 'Edit School Staff' : 'Create School Staff'}
+            subtitle="Limited account for registration — they can only see Register Freshers and Verify Receipt."
+            icon={<Crown size={20} />}
+          >
+            <form onSubmit={saveSchoolAdmin}>
+              <div className="field">
+                <label>Full Name *</label>
+                <input
+                  className="input"
+                  value={schoolAdminForm.name}
+                  onChange={(e) => setSchoolAdminForm({ ...schoolAdminForm, name: e.target.value })}
+                  placeholder="e.g. Ama Mensah"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Email *</label>
+                <input
+                  className="input"
+                  type="email"
+                  value={schoolAdminForm.email}
+                  onChange={(e) =>
+                    setSchoolAdminForm({ ...schoolAdminForm, email: e.target.value })
+                  }
+                  placeholder="e.g. ama.mensah@sciences.uenr.edu.gh"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>
+                  {editingSchoolStaff ? 'New Password (leave blank to keep)' : 'Password *'}
+                </label>
+                <PasswordInput
+                  value={schoolAdminForm.password}
+                  onChange={(e) =>
+                    setSchoolAdminForm({ ...schoolAdminForm, password: e.target.value })
+                  }
+                  required={!editingSchoolStaff}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowSchoolStaffModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingSchoolStaff ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving
+                    ? 'Saving…'
+                    : editingSchoolStaff
+                      ? 'Save Changes'
+                      : 'Create School Staff'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          <Modal
+            open={showDeptStaffModal}
+            onClose={() => setShowDeptStaffModal(false)}
+            title={editingDeptStaff ? 'Edit Department Staff' : 'Create Department Staff'}
+            subtitle={`Limited account for ${user?.department_name || editingDeptStaff?.department_name || 'their department'} — Admit Freshers, Receipts, and Verify.`}
+            icon={<Users size={20} />}
+          >
+            <form onSubmit={saveDeptStaff}>
+              <div className="field">
+                <label>Full Name *</label>
+                <input
+                  className="input"
+                  value={deptStaffForm.name}
+                  onChange={(e) => setDeptStaffForm({ ...deptStaffForm, name: e.target.value })}
+                  placeholder="e.g. Ama Mensah"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Email *</label>
+                <input
+                  className="input"
+                  type="email"
+                  value={deptStaffForm.email}
+                  onChange={(e) => setDeptStaffForm({ ...deptStaffForm, email: e.target.value })}
+                  placeholder="e.g. ama.mensah@sciences.uenr.edu.gh"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>
+                  {editingDeptStaff ? 'New Password (leave blank to keep)' : 'Password *'}
+                </label>
+                <PasswordInput
+                  value={deptStaffForm.password}
+                  onChange={(e) => setDeptStaffForm({ ...deptStaffForm, password: e.target.value })}
+                  required={!editingDeptStaff}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowDeptStaffModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingDeptStaff ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving ? 'Saving…' : editingDeptStaff ? 'Save Changes' : 'Create Staff'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          <Modal
+            open={showSuperAdminModal}
+            onClose={() => setShowSuperAdminModal(false)}
+            title={editingSuperAdmin ? 'Edit Super Admin' : 'Create Super Admin'}
+            subtitle="Full school access plus the five privileged actions (resend receipt emails, correct/reopen applications, force-delete, account management)."
+            icon={<Crown size={20} />}
+          >
+            <form onSubmit={saveSuperAdmin}>
+              <div className="field">
+                <label>Full Name *</label>
+                <input
+                  className="input"
+                  value={superAdminForm.name}
+                  onChange={(e) => setSuperAdminForm({ ...superAdminForm, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Email *</label>
+                <input
+                  className="input"
+                  type="email"
+                  value={superAdminForm.email}
+                  onChange={(e) => setSuperAdminForm({ ...superAdminForm, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>
+                  {editingSuperAdmin ? 'New Password (leave blank to keep)' : 'Password *'}
+                </label>
+                <PasswordInput
+                  value={superAdminForm.password}
+                  onChange={(e) =>
+                    setSuperAdminForm({ ...superAdminForm, password: e.target.value })
+                  }
+                  required={!editingSuperAdmin}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowSuperAdminModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingSuperAdmin ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving
+                    ? 'Saving…'
+                    : editingSuperAdmin
+                      ? 'Save Changes'
+                      : 'Create Super Admin'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          <Modal
+            open={showDeptAdminModal}
+            onClose={() => setShowDeptAdminModal(false)}
+            title={editingAdmin ? 'Edit Department Admin' : 'Create Department Admin'}
+            subtitle="Full admin access to their own department — freshers, dues, and souvenirs."
+            icon={<Users size={20} />}
+          >
+            <form onSubmit={saveAdmin}>
+              <div className="field">
+                <label>Full Name *</label>
+                <input
+                  className="input"
+                  value={adminForm.name}
+                  onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Email *</label>
+                <input
+                  className="input"
+                  type="email"
+                  value={adminForm.email}
+                  onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>{editingAdmin ? 'New Password (leave blank to keep)' : 'Password *'}</label>
+                <PasswordInput
+                  value={adminForm.password}
+                  onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                  required={!editingAdmin}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="field">
+                <label>Department *</label>
+                <Select
+                  value={adminForm.department_id}
+                  onChange={(v) => setAdminForm({ ...adminForm, department_id: v })}
+                  options={deptOptions}
+                  placeholder="Select department..."
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowDeptAdminModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingAdmin ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving ? 'Saving…' : editingAdmin ? 'Save Changes' : 'Create Admin'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          <Modal
+            open={showDuesItemModal}
+            onClose={() => setShowDuesItemModal(false)}
+            title={editingDuesItem ? 'Edit Dues Item' : 'Add Dues Item'}
+            subtitle={
+              editingDuesItem
+                ? 'Rename, reprice or deactivate it. Past receipts keep the name they were charged under.'
+                : isSchool
+                  ? 'An extra charge every fresher pays alongside School dues at verification and registration.'
+                  : `An extra charge ${user?.department_name}'s freshers pay alongside Department dues at admission.`
+            }
+            icon={<CurrencyCircleDollar size={20} />}
+          >
+            <form onSubmit={saveDuesItem}>
+              <div className="field">
+                <label>Name *</label>
+                <input
+                  className="input"
+                  value={duesItemForm.name}
+                  onChange={(e) => setDuesItemForm({ ...duesItemForm, name: e.target.value })}
+                  placeholder="e.g. Lab Levy, Exam Levy, Dept T-shirt"
+                  maxLength={60}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Amount (GHS) *</label>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={duesItemForm.amount}
+                  onChange={(e) => setDuesItemForm({ ...duesItemForm, amount: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Applies to *</label>
+                <Select
+                  value={duesItemForm.gender || 'any'}
+                  onChange={(v) => setDuesItemForm({ ...duesItemForm, gender: v })}
+                  options={GENDER_SCOPE_OPTIONS}
+                />
+                <p className="muted text-xs" style={{ marginTop: 6 }}>
+                  Gendered items are greyed out for the other gender at verification, registration
+                  and admission, and refused server-side.
+                </p>
+              </div>
+              {!isSchool && (
+                <div className="field">
+                  <label>Scope</label>
+                  <input className="input" value={user?.department_name || ''} disabled readOnly />
+                </div>
+              )}
+              {editingDuesItem && (
+                <div className="field">
+                  <Checkbox
+                    checked={duesItemForm.active}
+                    onChange={(checked) => setDuesItemForm({ ...duesItemForm, active: checked })}
+                    label="Active — offered to freshers at verification"
+                  />
+                </div>
+              )}
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowDuesItemModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingDuesItem ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving ? 'Saving…' : editingDuesItem ? 'Save Changes' : 'Add Item'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+
+          <Modal
+            open={showDeptSouvenirModal}
+            onClose={() => setShowDeptSouvenirModal(false)}
+            title={editingDeptSouvenir ? 'Edit Department Souvenir' : 'Add Department Souvenir'}
+            subtitle={`Add an item ${user?.department_name} gives to freshers at admission.`}
+            icon={<Gift size={20} />}
+          >
+            <form onSubmit={saveDeptSouvenir}>
+              <div className="field">
+                <label>Name *</label>
+                <input
+                  className="input"
+                  value={deptSouvenirForm.name}
+                  onChange={(e) =>
+                    setDeptSouvenirForm({ ...deptSouvenirForm, name: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => setShowDeptSouvenirModal(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={modalSaving}>
+                  {editingDeptSouvenir ? <CheckCircle size={16} /> : <Plus size={16} />}{' '}
+                  {modalSaving ? 'Saving…' : editingDeptSouvenir ? 'Save Changes' : 'Add Souvenir'}
+                </button>
+              </div>
+            </form>
+          </Modal>
         </div>
       </div>
     </div>

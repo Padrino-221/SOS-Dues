@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, EyeSlash } from '@phosphor-icons/react';
+import { IconEye as Eye, IconEyeOff as EyeSlash } from '@tabler/icons-react';
 
 /** Input with a show/hide toggle for passwords. */
 export default function PasswordInput({

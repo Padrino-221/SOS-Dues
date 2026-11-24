@@ -5,6 +5,7 @@ const pool = require('../db/pool');
 const { AppError } = require('../utils/errors');
 const { requireAuth, requireSchoolAdmin, isAnySchool } = require('../middleware/auth');
 const { logTransaction } = require('../utils/audit');
+const { assertMainDues } = require('../utils/duesLimits');
 
 // Never expose the pin hash to clients — only whether one is set.
 function publicDept(row) {
@@ -22,33 +23,31 @@ function makeCode(name) {
   return `${clean}-${rand}`;
 }
 
+// Parse a money amount and quantize it to 2 decimal places. Empty or
+// non-numeric input is rejected explicitly: Number('') === 0, which would
+// silently store GHS 0 when a field is cleared by mistake.
+function parseMoney(raw, label = 'amount') {
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    throw new AppError('Enter an amount', 400);
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) throw new AppError(`A valid ${label} is required`, 400);
+  return Math.round(n * 100) / 100;
+}
+
 const router = express.Router();
 router.use(requireAuth);
 
 // ─── List departments ───
 // School Admin: all departments with stats
 // Dept Admin:   only their own department (includes the public rep code)
+// Counts are fresher workflow stats — payment activity lives in the
+// reports summary (payers, receipts, totals).
 router.get('/', async (req, res, next) => {
   try {
-    const query =
-      isAnySchool(req.user)
-        ? `SELECT d.*,
-           COUNT(DISTINCT c.id) AS class_count,
-           COUNT(DISTINCT s.id) AS student_count,
-           COUNT(DISTINCT s.id) FILTER (WHERE s.is_fresher) AS fresher_count
-         FROM departments d
-         LEFT JOIN classes c ON c.department_id = d.id
-         LEFT JOIN students s ON s.department_id = d.id
-         GROUP BY d.id ORDER BY d.name`
-        : `SELECT d.*,
-           COUNT(DISTINCT c.id) AS class_count,
-           COUNT(DISTINCT s.id) AS student_count,
-           COUNT(DISTINCT s.id) FILTER (WHERE s.is_fresher) AS fresher_count
-         FROM departments d
-         LEFT JOIN classes c ON c.department_id = d.id
-         LEFT JOIN students s ON s.department_id = d.id
-         WHERE d.id = $1
-         GROUP BY d.id`;
+    const query = isAnySchool(req.user)
+      ? 'SELECT d.* FROM departments d ORDER BY d.name'
+      : 'SELECT d.* FROM departments d WHERE d.id = $1';
     const params = isAnySchool(req.user) ? [] : [req.user.department_id];
     const { rows } = await pool.query(query, params);
     res.json(rows.map(publicDept));
@@ -76,7 +75,11 @@ router.post('/', requireSchoolAdmin, async (req, res, next) => {
   try {
     const { name, dues_amount } = req.body;
     if (!name) throw new AppError('Department name is required', 400);
-    const amount = dues_amount ?? 0;
+    const amount =
+      dues_amount === undefined || dues_amount === null
+        ? 0
+        : parseMoney(dues_amount, 'dues amount');
+    assertMainDues(amount, 'Department dues');
     // Retry on a rare public-code collision (unique code). The name-unique
     // constraint still surfaces as 23505 below after exhausting retries.
     let rows;
@@ -114,9 +117,14 @@ router.put('/:id', requireSchoolAdmin, async (req, res, next) => {
   try {
     const { name, dues_amount } = req.body;
     if (!name) throw new AppError('Department name is required', 400);
+    const dues =
+      dues_amount === undefined || dues_amount === null
+        ? 0
+        : parseMoney(dues_amount, 'dues amount');
+    assertMainDues(dues, 'Department dues');
     const { rows } = await pool.query(
       'UPDATE departments SET name = $1, dues_amount = $2 WHERE id = $3 RETURNING *',
-      [name, dues_amount ?? 0, req.params.id]
+      [name, dues, req.params.id]
     );
     if (rows.length === 0) throw new AppError('Department not found', 404);
 
@@ -125,7 +133,7 @@ router.put('/:id', requireSchoolAdmin, async (req, res, next) => {
       admin_role: 'SCHOOL_ADMIN',
       transaction_type: 'department_update',
       description: `Updated department "${name}"`,
-      meta: { department_id: Number(req.params.id), name, dues_amount },
+      meta: { department_id: Number(req.params.id), name, dues_amount: dues },
     });
 
     res.json(publicDept(rows[0]));
@@ -166,7 +174,7 @@ router.put('/:id/pin', async (req, res, next) => {
 
     await logTransaction({
       admin_id: req.user.id,
-      admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
+      admin_role: req.user.role === 'super_admin' ? 'SUPER_ADMIN' : req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'department_update',
       description: `${rows[0].name}: collector PIN set`,
       meta: { department_id: Number(req.params.id) },
@@ -190,7 +198,7 @@ router.delete('/:id/pin', async (req, res, next) => {
 
     await logTransaction({
       admin_id: req.user.id,
-      admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
+      admin_role: req.user.role === 'super_admin' ? 'SUPER_ADMIN' : req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'department_update',
       description: `${rows[0].name}: collector PIN removed`,
       meta: { department_id: Number(req.params.id) },
@@ -207,8 +215,8 @@ router.delete('/:id/pin', async (req, res, next) => {
 router.put('/:id/dues', async (req, res, next) => {
   try {
     assertCanConfigure(req, req.params.id);
-    const amount = Number(req.body.dues_amount);
-    if (isNaN(amount) || amount < 0) throw new AppError('A valid dues amount is required', 400);
+    const amount = parseMoney(req.body.dues_amount, 'dues amount');
+    assertMainDues(amount, 'Department dues');
 
     const { rows } = await pool.query(
       'UPDATE departments SET dues_amount = $1 WHERE id = $2 RETURNING *',
@@ -218,7 +226,7 @@ router.put('/:id/dues', async (req, res, next) => {
 
     await logTransaction({
       admin_id: req.user.id,
-      admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
+      admin_role: req.user.role === 'super_admin' ? 'SUPER_ADMIN' : req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'department_update',
       description: `Set ${rows[0].name} dues amount to GHS ${amount}`,
       meta: { department_id: Number(req.params.id), dues_amount: amount },
@@ -240,10 +248,10 @@ router.post('/:id/regenerate-code', requireSchoolAdmin, async (req, res, next) =
     let rows;
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        const r = await pool.query(
-          'UPDATE departments SET code = $1 WHERE id = $2 RETURNING *',
-          [makeCode(dept.rows[0].name), req.params.id]
-        );
+        const r = await pool.query('UPDATE departments SET code = $1 WHERE id = $2 RETURNING *', [
+          makeCode(dept.rows[0].name),
+          req.params.id,
+        ]);
         rows = r.rows;
         break;
       } catch (err) {
@@ -265,24 +273,90 @@ router.post('/:id/regenerate-code', requireSchoolAdmin, async (req, res, next) =
 });
 
 // ─── Delete department (School Admin only) ───
+// A department with payment history must NOT be deleted: receipts.department_id
+// is ON DELETE SET NULL, so the receipts would survive with a blank department
+// (invisible/mislabelled in reports and CSV), while students cascade
+// away. Block that case with the real counts; otherwise remove the department
+// together with its staff accounts so a dept_admin cannot keep logging in to a
+// department that no longer exists.
 router.delete('/:id', requireSchoolAdmin, async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query('DELETE FROM departments WHERE id = $1 RETURNING id, name', [
+    await client.query('BEGIN');
+    const deptRes = await client.query('SELECT id, name FROM departments WHERE id = $1 FOR UPDATE', [
       req.params.id,
     ]);
-    if (rows.length === 0) throw new AppError('Department not found', 404);
+    if (deptRes.rows.length === 0) throw new AppError('Department not found', 404);
+    const deptName = deptRes.rows[0].name;
 
-    logTransaction({
+    // Receipts tagged with this department, plus receipts belonging to this
+    // department's students (deleting the department cascades to students and
+    // would cascade-destroy those receipts too).
+    const receiptsRes = await client.query(
+      `SELECT COUNT(*)::int AS receipts,
+              COALESCE(SUM(r.total_amount) FILTER (WHERE r.voided_at IS NULL), 0) AS amount
+       FROM receipts r
+       LEFT JOIN students s ON s.id = r.student_id
+       WHERE r.department_id = $1 OR s.department_id = $1`,
+      [req.params.id]
+    );
+    const paymentsRes = await client.query(
+      'SELECT COUNT(*)::int AS payments FROM payments WHERE department_id = $1',
+      [req.params.id]
+    );
+    const receiptCount = receiptsRes.rows[0].receipts;
+    const amount = Number(receiptsRes.rows[0].amount);
+    const paymentCount = paymentsRes.rows[0].payments;
+
+    if (receiptCount > 0) {
+      throw new AppError(
+        `This department has ${receiptCount} receipt${receiptCount === 1 ? '' : 's'} (GHS ${amount.toFixed(
+          2
+        )}). Archive it instead.`,
+        409
+      );
+    }
+    if (paymentCount > 0) {
+      throw new AppError(
+        `This department has ${paymentCount} recorded payment${
+          paymentCount === 1 ? '' : 's'
+        }. Archive it instead.`,
+        409
+      );
+    }
+
+    const usersRes = await client.query(
+      `DELETE FROM users WHERE department_id = $1 AND role IN ('dept_admin', 'dept_staff')
+       RETURNING id, name`,
+      [req.params.id]
+    );
+    const delRes = await client.query('DELETE FROM departments WHERE id = $1 RETURNING id, name', [
+      req.params.id,
+    ]);
+    if (delRes.rows.length === 0) throw new AppError('Department not found', 404);
+
+    await logTransaction({
       admin_id: req.user.id,
       admin_role: 'SCHOOL_ADMIN',
       transaction_type: 'department_delete',
-      description: `Deleted department "${rows[0].name}"`,
-      meta: { department_id: rows[0].id, name: rows[0].name },
+      description: `Deleted department "${deptName}" (${
+        usersRes.rows.length
+      } staff account${usersRes.rows.length === 1 ? '' : 's'} removed)`,
+      meta: {
+        department_id: delRes.rows[0].id,
+        name: deptName,
+        users_removed: usersRes.rows.map((u) => ({ id: u.id, name: u.name })),
+      },
+      client,
     });
+    await client.query('COMMIT');
 
-    res.json({ message: 'Department deleted' });
+    res.json({ message: 'Department deleted', users_removed: usersRes.rows.length });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
+  } finally {
+    client.release();
   }
 });
 

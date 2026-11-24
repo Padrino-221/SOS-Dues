@@ -31,7 +31,7 @@ async function ensureDatabase() {
 // v2 schema — full rebuild. Drops every table first so the structure always
 // matches this file exactly.
 const schema = `
-DROP TABLE IF EXISTS transaction_log, student_souvenirs, payments, receipts, fresher_applications, souvenirs, students, classes, users, departments, settings CASCADE;
+DROP TABLE IF EXISTS course_reps, transaction_log, student_souvenirs, payments, dues_items, receipts, fresher_applications, souvenirs, students, classes, users, departments, settings CASCADE;
 
 CREATE TABLE settings (
   key TEXT PRIMARY KEY,
@@ -57,22 +57,14 @@ CREATE TABLE users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('school_admin', 'school_staff', 'dept_admin', 'dept_staff')),
+  role TEXT NOT NULL CHECK (role IN ('school_admin', 'school_staff', 'dept_admin', 'dept_staff', 'super_admin')),
   department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Classes belong to a department. A class can represent a whole level
--- (name = level, e.g. 'Level 200') or a group within a level
--- (e.g. level 'Level 200', name 'Level 200 A').
-CREATE TABLE classes (
-  id SERIAL PRIMARY KEY,
-  department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-  level TEXT NOT NULL,
-  name TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (department_id, name)
-);
+-- Classes are gone (Phase C): levels are the only grouping axis. The teardown
+-- DROP above still names the classes table so a legacy install is cleaned up
+-- on a fresh setup, but nothing recreates it here.
 
 CREATE TABLE souvenirs (
   id SERIAL PRIMARY KEY,
@@ -81,7 +73,6 @@ CREATE TABLE souvenirs (
   -- Department souvenirs belong to one department (configured by its admin);
   -- school souvenirs are global and department_id is NULL.
   department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
-  cost NUMERIC(12,2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -99,7 +90,8 @@ CREATE TABLE fresher_applications (
   gender TEXT,
   hometown TEXT,
   admission_year TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'cancelled')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'cancelled', 'rejected')),
+  rejection_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   verified_at TIMESTAMPTZ,
   verified_by INTEGER REFERENCES users(id) ON DELETE SET NULL
@@ -107,26 +99,24 @@ CREATE TABLE fresher_applications (
 
 -- is_fresher: registered by School Admin (with department assigned).
 -- admitted_at/admitted_by: set when the Dept Admin admits the fresher.
--- Continuing students are created by the Dept Admin (is_fresher = false).
+-- The students table holds only the fresher registration/admission workflow.
+-- Continuing students have NO roster row — their payments are recorded
+-- free-flow with the payer's name and index number snapshotted on the receipt.
 -- Student numbers are university-issued and unique across the whole university
 -- (format: UE + programme letter + department id + sequence + enrollment year,
 -- e.g. UEB3227523). Enforced by a global unique index on UPPER(student_no).
--- receipt_seq is the per-student lifetime counter used to build receipt numbers.
 -- LEVELS: the durable, mandatory progression axis a student moves along each
 -- academic year (100 -> 200 -> 300 -> 400). Represented as numeric text so it
--- sorts and compares cleanly. class_id is optional finer grouping WITHIN a
--- level (some levels have classes, others don't) — used by reps for per-class
--- collection. is_graduated hides Level 400 alumni from active collection.
+-- sorts and compares cleanly. This is the only grouping axis — there is no
+-- finer class/stream subdivision any more (Phase C removed it).
 CREATE TABLE students (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   student_no TEXT,
+  class_name TEXT,
   is_fresher BOOLEAN NOT NULL DEFAULT false,
   level TEXT NOT NULL DEFAULT '100' CHECK (level IN ('100', '200', '300', '400')),
-  is_graduated BOOLEAN NOT NULL DEFAULT false,
-  is_archived BOOLEAN NOT NULL DEFAULT false,
   department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-  class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
   admission_year TEXT,
   phone TEXT,
   email TEXT,
@@ -136,27 +126,41 @@ CREATE TABLE students (
   admitted_at TIMESTAMPTZ,
   admitted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  receipt_seq INTEGER NOT NULL DEFAULT 0,
+  verification_status TEXT NOT NULL DEFAULT 'verified' CHECK (verification_status IN ('verified', 'pending')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- One receipt per collection session. department_id/class_id record the
--- context in which the money was collected (null for school-admin registrations).
+-- One receipt per collection session. department_id records the context in
+-- which the money was collected (null for school-admin registrations).
+--
+-- Free-flow payments (class rep page / Collect page) are recorded WITHOUT a
+-- student row: the payer's name, index number, email and level are snapshotted
+-- on the receipt itself and student_id stays NULL. payer_email is where the
+-- receipt email is delivered — required on free-flow paths; student-linked
+-- receipts (fresher registration / admission) use the email on their student
+-- row and leave it NULL. Student-linked receipts keep student_id and leave the
+-- name/number snapshot columns empty — readers COALESCE the two sources.
 CREATE TABLE receipts (
   id SERIAL PRIMARY KEY,
   receipt_number TEXT NOT NULL UNIQUE,
-  student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+  student_name TEXT,
+  student_no TEXT,
+  class_name TEXT,
+  payer_email TEXT,
+  level TEXT CHECK (level IN ('100', '200', '300', '400')),
+  payment_level TEXT CHECK (payment_level IN ('100', '200', '300', '400')),
   method TEXT NOT NULL CHECK (method IN ('cash', 'momo')),
   paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   academic_year TEXT,
   record_type TEXT NOT NULL DEFAULT 'admin' CHECK (record_type IN ('admin', 'rep')),
   recorded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
-  class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
   total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   voided_at TIMESTAMPTZ,
   voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   void_reason TEXT,
+  idempotency_key TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -165,14 +169,31 @@ CREATE TABLE receipts (
 CREATE TABLE payments (
   id SERIAL PRIMARY KEY,
   receipt_id INTEGER NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('school_dues', 'department_dues')),
+  type TEXT NOT NULL CHECK (type IN ('school_dues', 'department_dues', 'extra_dues')),
+  -- Name snapshot for extra_dues lines (NULL for the two standard types) so
+  -- historical receipts keep their meaning when a dues item is renamed.
+  label TEXT,
   amount NUMERIC(12,2) NOT NULL,
   department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
-  class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
   voided_at TIMESTAMPTZ,
   voided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   void_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Additional named dues ("Other Dues"): items a department or the school
+-- defines for freshers to pay alongside School dues at verification and
+-- manual registration. department_id NULL = school-wide (every fresher).
+CREATE TABLE dues_items (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  gender TEXT NOT NULL DEFAULT 'any',
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE student_souvenirs (
@@ -219,16 +240,15 @@ CREATE INDEX idx_fresher_apps_created ON fresher_applications(created_at);
 -- department on reporting day), so openness is the meaningful uniqueness axis.
 CREATE UNIQUE INDEX idx_fresher_apps_open_no ON fresher_applications(student_no) WHERE status = 'pending';
 CREATE INDEX idx_students_dept ON students(department_id);
-CREATE INDEX idx_students_class ON students(class_id);
 CREATE INDEX idx_students_level ON students(level);
 CREATE UNIQUE INDEX idx_students_unique_no ON students (UPPER(student_no)) WHERE student_no IS NOT NULL;
-CREATE INDEX idx_students_graduated ON students(is_graduated) WHERE is_graduated = true;
-CREATE INDEX idx_students_archived ON students(is_archived) WHERE is_archived = true;
 CREATE INDEX idx_students_no ON students(student_no);
 CREATE INDEX idx_payments_receipt ON payments(receipt_id);
 CREATE INDEX idx_payments_type ON payments(type);
 CREATE INDEX idx_payments_voided ON payments(voided_at) WHERE voided_at IS NOT NULL;
 CREATE INDEX idx_receipts_number ON receipts(receipt_number);
+CREATE UNIQUE INDEX idx_receipts_idempotency_key ON receipts(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX idx_receipts_student_no ON receipts(UPPER(student_no)) WHERE student_no IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_receipts_academic_year ON receipts(academic_year);
 CREATE INDEX idx_receipts_voided ON receipts(voided_at) WHERE voided_at IS NOT NULL;
 CREATE INDEX idx_student_souvenirs_receipt ON student_souvenirs(receipt_id);
@@ -240,6 +260,7 @@ async function runSchema() {
   // the local PG* connection, whichever is configured.
   const pool = require('./pool');
   await pool.query(schema);
+  await require('./courseReps')();
   console.log('v2 schema applied successfully');
   await pool.end();
 }

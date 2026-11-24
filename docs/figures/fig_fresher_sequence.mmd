@@ -1,0 +1,16 @@
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E9EEF9','primaryTextColor':'#111111','primaryBorderColor':'#0D2063','lineColor':'#33415C','secondaryColor':'#FFF4D6','tertiaryColor':'#F7F9FC','fontFamily':'Times New Roman','fontSize':'16px','edgeLabelBackground':'#FFFFFF'}}}%%
+sequenceDiagram
+  actor Applicant as Fresher
+  actor School as School Admin
+  actor Dept as Department Admin
+  participant App as Dues system
+  participant DB as PostgreSQL
+  Applicant->>App: Submit pre-registration
+  App->>DB: Insert application (pending)
+  School->>App: Verify and register fresher
+  App->>DB: Insert student, assign department
+  School->>App: Record school dues and souvenirs
+  App->>DB: Insert SCH receipt and payment lines
+  Dept->>App: Admit fresher at level 100-400
+  Dept->>App: Record department dues
+  App->>DB: Insert DEPT receipt and payment lines

@@ -1,24 +1,46 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import api from '../api/client';
+import { asArray } from '../utils/asArray';
 import { useAuth } from '../context/AuthContext';
 import {
-  CheckCircle,
-  Warning,
-  Clock,
-  CurrencyCircleDollar,
-  Users,
-  UserPlus,
-  Trash,
-  Pencil,
-  Gift,
-  ShieldCheck,
-  UploadSimple,
-  Gear,
-  DownloadSimple,
-  ArrowLeft,
-  ArrowRight,
-} from '@phosphor-icons/react';
+  IconCircleCheck as CheckCircle,
+  IconAlertTriangle as Warning,
+  IconClock as Clock,
+  IconCurrencyDollar as CurrencyCircleDollar,
+  IconUsers as Users,
+  IconUserPlus as UserPlus,
+  IconTrash as Trash,
+  IconPencil as Pencil,
+  IconGift as Gift,
+  IconShieldCheck as ShieldCheck,
+  IconSettings as Gear,
+  IconDownload as DownloadSimple,
+  IconArrowLeft as ArrowLeft,
+  IconArrowRight as ArrowRight,
+  IconBan as Prohibit,
+  IconSend as PaperPlaneTilt,
+} from '@tabler/icons-react';
 import Select from '../components/ui/Select';
+
+// Institution timezone (GMT+0) so audit timestamps never shift a day on
+// devices set outside GMT.
+const ACCRA_TZ = 'Africa/Accra';
+
+function formatDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { timeZone: ACCRA_TZ });
+}
+
+function formatTime(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString(undefined, {
+    timeZone: ACCRA_TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 function Toast({ message, type, onClose }) {
   useEffect(() => {
@@ -36,16 +58,31 @@ function Toast({ message, type, onClose }) {
 const TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
   { value: 'payment', label: 'Payments / Receipts' },
+  { value: 'receipt_void', label: 'Receipt Voided' },
+  { value: 'payment_void', label: 'Payment Line Voided' },
+  { value: 'other_dues_edit', label: 'Other Dues Edited' },
+  { value: 'receipt_resend', label: 'Receipt Email Re-sent' },
+  { value: 'souvenir_distribution', label: 'Souvenirs Issued' },
   { value: 'fresher_register', label: 'Fresher Registered' },
+  { value: 'fresher_verify', label: 'Fresher Verified' },
   { value: 'fresher_admit', label: 'Fresher Admitted' },
-  { value: 'student_create', label: 'Student Created' },
-  { value: 'student_bulk_import', label: 'Bulk Import' },
+  { value: 'fresher_apply', label: 'Fresher Pre-Registration' },
+  { value: 'fresher_application_edit', label: 'Pre-Registration Edited' },
+  { value: 'fresher_application_reject', label: 'Pre-Registration Rejected' },
+  { value: 'fresher_application_reopen', label: 'Pre-Registration Reopened' },
+  { value: 'fresher_application_delete', label: 'Pre-Registration Removed' },
+  { value: 'student_add', label: 'Student Added' },
+  { value: 'student_verify', label: 'Student Verified' },
+  { value: 'student_bulk_import', label: 'Students Imported' },
   { value: 'student_update', label: 'Student Updated' },
   { value: 'student_delete', label: 'Student Deleted' },
   { value: 'class_create', label: 'Class Created' },
   { value: 'department_create', label: 'Department Created' },
   { value: 'department_update', label: 'Department Updated' },
   { value: 'department_delete', label: 'Department Deleted' },
+  { value: 'dues_item_create', label: 'Dues Item Created' },
+  { value: 'dues_item_update', label: 'Dues Item Updated' },
+  { value: 'dues_item_delete', label: 'Dues Item Deleted' },
   { value: 'souvenir_create', label: 'Souvenir Created' },
   { value: 'souvenir_update', label: 'Souvenir Updated' },
   { value: 'souvenir_delete', label: 'Souvenir Deleted' },
@@ -56,6 +93,7 @@ const ROLE_OPTIONS = [
   { value: '', label: 'All Roles' },
   { value: 'SCHOOL_ADMIN', label: 'School Admin' },
   { value: 'DEPT_ADMIN', label: 'Dept Admin' },
+  { value: 'SCHOOL_STAFF', label: 'School Staff' },
   { value: 'DEPT_STAFF', label: 'Dept Staff' },
   { value: 'REP', label: 'Class Rep' },
   { value: 'SYSTEM', label: 'System' },
@@ -63,16 +101,31 @@ const ROLE_OPTIONS = [
 
 const TYPE_ICONS = {
   payment: { Icon: CurrencyCircleDollar, color: 'green' },
+  receipt_void: { Icon: Prohibit, color: 'red' },
+  payment_void: { Icon: Prohibit, color: 'red' },
+  other_dues_edit: { Icon: Pencil, color: 'gold' },
+  receipt_resend: { Icon: PaperPlaneTilt, color: 'green' },
+  souvenir_distribution: { Icon: Gift, color: 'green' },
   fresher_register: { Icon: UserPlus, color: 'navy' },
+  fresher_verify: { Icon: CheckCircle, color: 'navy' },
   fresher_admit: { Icon: Users, color: 'navy' },
-  student_create: { Icon: UserPlus, color: 'green' },
-  student_bulk_import: { Icon: UploadSimple, color: 'green' },
+  fresher_apply: { Icon: PaperPlaneTilt, color: 'gold' },
+  fresher_application_edit: { Icon: Pencil, color: 'gold' },
+  fresher_application_reject: { Icon: Prohibit, color: 'red' },
+  fresher_application_reopen: { Icon: CheckCircle, color: 'navy' },
+  fresher_application_delete: { Icon: Trash, color: 'red' },
+  student_add: { Icon: UserPlus, color: 'navy' },
+  student_verify: { Icon: CheckCircle, color: 'navy' },
+  student_bulk_import: { Icon: Users, color: 'navy' },
   student_update: { Icon: Pencil, color: 'navy' },
   student_delete: { Icon: Trash, color: 'red' },
   class_create: { Icon: Pencil, color: 'navy' },
   department_create: { Icon: ShieldCheck, color: 'navy' },
   department_update: { Icon: Pencil, color: 'gold' },
   department_delete: { Icon: Trash, color: 'red' },
+  dues_item_create: { Icon: CurrencyCircleDollar, color: 'navy' },
+  dues_item_update: { Icon: Pencil, color: 'gold' },
+  dues_item_delete: { Icon: Trash, color: 'red' },
   souvenir_create: { Icon: Gift, color: 'navy' },
   souvenir_update: { Icon: Pencil, color: 'gold' },
   souvenir_delete: { Icon: Trash, color: 'red' },
@@ -81,16 +134,31 @@ const TYPE_ICONS = {
 
 const TYPE_BADGES = {
   payment: 'badge-green',
+  receipt_void: 'badge-red',
+  payment_void: 'badge-red',
+  other_dues_edit: 'badge-gold',
+  receipt_resend: 'badge-green',
+  souvenir_distribution: 'badge-green',
   fresher_register: 'badge-navy',
+  fresher_verify: 'badge-navy',
   fresher_admit: 'badge-navy',
-  student_create: 'badge-green',
-  student_bulk_import: 'badge-green',
+  fresher_apply: 'badge-gold',
+  fresher_application_edit: 'badge-gold',
+  fresher_application_reject: 'badge-red',
+  fresher_application_reopen: 'badge-navy',
+  fresher_application_delete: 'badge-red',
+  student_add: 'badge-navy',
+  student_verify: 'badge-navy',
+  student_bulk_import: 'badge-navy',
   student_update: 'badge-navy',
   student_delete: 'badge-red',
   class_create: 'badge-navy',
   department_create: 'badge-navy',
   department_update: 'badge-gold',
   department_delete: 'badge-red',
+  dues_item_create: 'badge-navy',
+  dues_item_update: 'badge-gold',
+  dues_item_delete: 'badge-red',
   souvenir_create: 'badge-navy',
   souvenir_update: 'badge-gold',
   souvenir_delete: 'badge-red',
@@ -114,7 +182,7 @@ function formatRole(role) {
 
 export default function AuditLog() {
   const { user } = useAuth();
-  const isSchool = user?.role === 'school_admin';
+  const isSchool = user?.role === 'school_admin' || user?.role === 'super_admin';
 
   const [entries, setEntries] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
@@ -138,8 +206,8 @@ export default function AuditLog() {
         if (typeFilter) params.type = typeFilter;
         if (roleFilter) params.admin_role = roleFilter;
         const res = await api.get('/audit', { params });
-        setEntries(res.data.entries);
-        setPagination(res.data.pagination);
+        setEntries(asArray(res.data?.entries));
+        setPagination(res.data?.pagination);
       } catch (err) {
         addToast('Failed to load audit log', 'error');
       } finally {
@@ -191,6 +259,9 @@ export default function AuditLog() {
 
   return (
     <div>
+      <style>{`
+        @media (max-width: 640px) { .hide-sm { display: none; } }
+      `}</style>
       <div className="toast-container">
         {toasts.map((t) => (
           <Toast
@@ -228,26 +299,26 @@ export default function AuditLog() {
               <div className="stat-value">{stats.total}</div>
             </div>
           </div>
-          {stats.byType.slice(0, 2).map((s) => {
-            const { Icon, color } = TYPE_ICONS[s.transaction_type] || {
-              Icon: Clock,
-              color: 'navy',
-            };
-            return (
-              <div key={s.transaction_type} className="stat-card">
-                <div className={`stat-icon-badge ${color}`}>
-                  <Icon size={22} />
-                </div>
-                <div className="stat-info">
-                  <div className="stat-label">{formatType(s.transaction_type)}</div>
-                  <div className="stat-value">{s.count}</div>
-                  <div className="stat-trend">
-                    Last: {new Date(s.last_occurrence).toLocaleDateString()}
+          {asArray(stats?.byType)
+            .slice(0, 2)
+            .map((s) => {
+              const { Icon, color } = TYPE_ICONS[s.transaction_type] || {
+                Icon: Clock,
+                color: 'navy',
+              };
+              return (
+                <div key={s.transaction_type} className="stat-card">
+                  <div className={`stat-icon-badge ${color}`}>
+                    <Icon size={22} />
+                  </div>
+                  <div className="stat-info">
+                    <div className="stat-label">{formatType(s.transaction_type)}</div>
+                    <div className="stat-value">{s.count}</div>
+                    <div className="stat-trend">Last: {formatDate(s.last_occurrence)}</div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       )}
 
@@ -326,7 +397,9 @@ export default function AuditLog() {
             <table className="table">
               <thead>
                 <tr>
-                  <th style={{ width: 50 }}>#</th>
+                  <th style={{ width: 50 }} className="hide-sm">
+                    #
+                  </th>
                   <th>Timestamp</th>
                   <th>Type</th>
                   <th>Description</th>
@@ -357,16 +430,12 @@ export default function AuditLog() {
                           }
                         }}
                       >
-                        <td className="muted text-sm">
+                        <td className="muted text-sm hide-sm">
                           {idx + 1 + (pagination.page - 1) * pagination.limit}
                         </td>
                         <td>
-                          <div style={{ fontSize: 14 }}>
-                            {new Date(entry.created_at).toLocaleDateString()}
-                          </div>
-                          <div className="muted text-xs">
-                            {new Date(entry.created_at).toLocaleTimeString()}
-                          </div>
+                          <div style={{ fontSize: 14 }}>{formatDate(entry.created_at)}</div>
+                          <div className="muted text-xs">{formatTime(entry.created_at)}</div>
                         </td>
                         <td>
                           <span

@@ -49,7 +49,22 @@ function getTransporter() {
 const TYPE_LABEL = {
   school_dues: 'School Dues',
   department_dues: 'Department Dues',
+  // extra_dues lines carry their own snapshot label — this is only the
+  // fallback when a line somehow arrives without one.
+  extra_dues: 'Other Dues',
 };
+
+// Escape dynamic values before interpolating them into receipt HTML. Fresher-
+// supplied names/numbers are attacker-controlled text and must never be
+// injected raw into the emailed receipt.
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 const FONT_STACK =
   "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
@@ -101,9 +116,9 @@ function generateReceiptHtml({
         .map(
           (l) => `
           <tr>
-            <td style="padding:10px 14px; font-size:13px; color:#3d3a33; border-bottom:1px solid #e6e2d8;">${
-              TYPE_LABEL[l.type] || l.type
-            }</td>
+            <td style="padding:10px 14px; font-size:13px; color:#3d3a33; border-bottom:1px solid #e6e2d8;">${escapeHtml(
+              l.label || TYPE_LABEL[l.type] || l.type
+            )}</td>
             <td align="right" style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714; border-bottom:1px solid #e6e2d8;">GHS ${Number(
               l.amount
             ).toFixed(2)}</td>
@@ -130,7 +145,7 @@ function generateReceiptHtml({
               ${safeSouvenirs
                 .map(
                   (s) =>
-                    `<span style="display:inline-block; background-color:#ffffff; color:#2e5f38; border:1px solid #3e7d49; font-size:12px; font-weight:700; padding:4px 10px; margin-right:6px; margin-bottom:6px;">✓ ${s}</span>`
+                    `<span style="display:inline-block; background-color:#ffffff; color:#2e5f38; border:1px solid #3e7d49; font-size:12px; font-weight:700; padding:4px 10px; margin-right:6px; margin-bottom:6px;">✓ ${escapeHtml(s)}</span>`
                 )
                 .join('')}
             </div>
@@ -148,11 +163,11 @@ function generateReceiptHtml({
   const paymentSummaryRows = `
     <tr>
       <td style="padding:10px 14px; background-color:#f1efe8; font-size:11px; font-weight:800; color:#66665f; text-transform:uppercase; width:40%; border-bottom:1px solid #e6e2d8;">Student Name</td>
-      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714; border-bottom:1px solid #e6e2d8;">${studentName}</td>
+      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714; border-bottom:1px solid #e6e2d8;">${escapeHtml(studentName)}</td>
     </tr>
     <tr>
       <td style="padding:10px 14px; background-color:#f1efe8; font-size:11px; font-weight:800; color:#66665f; text-transform:uppercase; border-bottom:1px solid #e6e2d8;">Student Number</td>
-      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714; border-bottom:1px solid #e6e2d8;">${studentNo || 'N/A'}</td>
+      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714; border-bottom:1px solid #e6e2d8;">${escapeHtml(studentNo) || 'N/A'}</td>
     </tr>
     <tr>
       <td style="padding:10px 14px; background-color:#f1efe8; font-size:11px; font-weight:800; color:#66665f; text-transform:uppercase; border-bottom:1px solid #e6e2d8;">Date & Time</td>
@@ -163,7 +178,7 @@ function generateReceiptHtml({
         ? `
     <tr>
       <td style="padding:10px 14px; background-color:#f1efe8; font-size:11px; font-weight:800; color:#66665f; text-transform:uppercase; border-bottom:1px solid #e6e2d8;">Payment Method</td>
-      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714; border-bottom:1px solid #e6e2d8;">${methodLabel}</td>
+      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714; border-bottom:1px solid #e6e2d8;">${escapeHtml(methodLabel)}</td>
     </tr>`
         : ''
     }
@@ -172,7 +187,7 @@ function generateReceiptHtml({
         ? `
     <tr>
       <td style="padding:10px 14px; background-color:#f1efe8; font-size:11px; font-weight:800; color:#66665f; text-transform:uppercase;">Department</td>
-      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714;">${departmentName}</td>
+      <td style="padding:10px 14px; font-size:13px; font-weight:600; color:#171714;">${escapeHtml(departmentName)}</td>
     </tr>`
         : ''
     }
@@ -207,7 +222,7 @@ function generateReceiptHtml({
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
+  <title>${escapeHtml(subject)}</title>
   <!-- Plus Jakarta Sans. Web fonts are honoured by Apple Mail / iOS Mail;
        other clients (Gmail web, Outlook) fall back to the system stack. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -251,7 +266,7 @@ function generateReceiptHtml({
             <td style="padding:28px 28px 20px 28px; font-family:${FONT_STACK};">
               <!-- Greeting -->
               <p style="font-size:15px; font-weight:600; color:#1d2a5e; margin:0 0 12px 0;">
-                Dear ${studentName},
+                Dear ${escapeHtml(studentName)},
               </p>
               <p style="font-size:14px; color:#57534a; line-height:1.5; margin:0 0 20px 0;">
                 ${
@@ -269,7 +284,7 @@ function generateReceiptHtml({
                       Receipt Number
                     </div>
                     <div style="font-size:20px; font-weight:800; color:#1d2a5e; letter-spacing:-0.5px; word-break:break-all;">
-                      ${receiptNumber}
+                      ${escapeHtml(receiptNumber)}
                     </div>
                     ${amountBadgeHtml}
                   </td>
@@ -314,7 +329,81 @@ function generateReceiptHtml({
 }
 
 /**
- * Send an itemized receipt email for a collection.
+ * Minimal-styled HTML for a reversed (voided) receipt notice. Shares the
+ * institution's visual language with the receipt email.
+ */
+function generateReversalHtml({ studentName, receiptNumber, reason, subject }) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(subject)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body, table, td, th, div, p, span, a { font-family: ${FONT_STACK} !important; }
+  </style>
+</head>
+<body style="margin:0; padding:0; background-color:#f7f5f1; font-family:${FONT_STACK}; -webkit-font-smoothing:antialiased; color:#171714;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#f7f5f1; padding: 24px 12px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:600px; background-color:#ffffff; border:1px solid #e6e2d8; border-collapse:separate; text-align:left;">
+          <tr>
+            <td style="background-color:#0f1633; padding:24px 28px; border-bottom:3px solid #b5852b; color:#ffffff;">
+              <div style="font-size:11px; font-weight:800; color:#e2bd4e; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:4px;">
+                University of Energy and Natural Resources
+              </div>
+              <div style="font-size:18px; font-weight:800; color:#ffffff; letter-spacing:-0.3px; margin:0;">
+                SCHOOL OF SCIENCES
+              </div>
+              <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:2px;">
+                Dues Management System • Receipt Reversal Notice
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px; font-family:${FONT_STACK};">
+              <p style="font-size:15px; font-weight:600; color:#1d2a5e; margin:0 0 12px 0;">
+                Dear ${escapeHtml(studentName)},
+              </p>
+              <p style="font-size:14px; color:#57534a; line-height:1.5; margin:0 0 16px 0;">
+                Your receipt <strong>${escapeHtml(receiptNumber)}</strong> has been reversed by the
+                School of Sciences. It no longer counts towards your dues balance.
+              </p>
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#fdecec; border:1px solid #e7b7b7; margin-bottom:20px;">
+                <tr>
+                  <td style="padding:14px 16px; font-size:13px; color:#8a1f1f;">
+                    <strong>Reason:</strong> ${escapeHtml(reason)}
+                  </td>
+                </tr>
+              </table>
+              <p style="font-size:12px; color:#66665f; line-height:1.5; margin:0;">
+                If you believe this was a mistake, please contact the School of Sciences or your
+                department administration.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#f7f5f1; padding:18px 28px; border-top:1px solid #e6e2d8; text-align:center; font-size:11px; color:#7d7868; line-height:1.5;">
+              <strong style="color:#1d2a5e;">School of Sciences, UENR Sunyani</strong><br>
+              Dues Management System • Official Electronic Notice
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+/**
+ * Send an itemized receipt email for a collection — or, when `reversalReason`
+ * is set, a notice that the receipt was reversed (voided).
  *
  * @param {object} opts
  * @param {string} opts.studentName
@@ -327,6 +416,8 @@ function generateReceiptHtml({
  * @param {string[]} [opts.souvenirs] Souvenir names handed out with this receipt
  * @param {string} [opts.departmentName]
  * @param {string} [opts.to]  Optional explicit recipient email (defaults to fallback config)
+ * @param {string} [opts.reversalReason] When present, sends a reversal (void) notice
+ *                                       instead of a receipt for this receipt number.
  * @returns {Promise<{sent:boolean, mode:'sent'|'dev'|'skipped'|'error', to:string|null, html?:string, error?:string}>}
  */
 async function sendReceiptEmail({
@@ -340,7 +431,34 @@ async function sendReceiptEmail({
   souvenirs,
   departmentName,
   to,
+  reversalReason,
 }) {
+  if (reversalReason) {
+    const subject = `Receipt ${receiptNumber} was reversed`;
+    const reason = String(reversalReason);
+    const textBody = `
+Dear ${studentName},
+
+Receipt ${receiptNumber} has been reversed by the School of Sciences.
+It no longer counts towards your dues balance.
+
+Reason: ${reason}
+
+If you believe this was a mistake, please contact the School of
+Sciences or your department administration.
+
+— School of Sciences, UENR Sunyani
+  Dues Management System
+`;
+    const htmlBody = generateReversalHtml({
+      studentName,
+      receiptNumber,
+      reason,
+      subject,
+    });
+    return dispatchEmail(to || studentNo, subject, textBody, htmlBody, to);
+  }
+
   const numericTotal = Number(total) || 0;
   const safeLines = Array.isArray(lines) ? lines : [];
   // A receipt with no money and no payment lines is a souvenir-only receipt;
@@ -460,5 +578,5 @@ async function dispatchEmail(identifier, subject, textBody, htmlBody, explicitTo
   }
 }
 
-module.exports = { sendReceiptEmail, generateReceiptHtml };
+module.exports = { sendReceiptEmail, generateReceiptHtml, getTransporter };
 

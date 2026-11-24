@@ -1,0 +1,92 @@
+student_id,name,index_no,department,gender,paid_items,missing_items,missing_count
+57,ABDUL - RAHAMAN UBEIDATU,UA2622314,Information Technology and Decision Sciences,Female,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund; Wocum Programs,5
+59,AISHA OSMAN,UA2605742,Computer Science and Informatics,Female,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund; Wocum Programs,5
+113,EMMANUELLA TAKYI,UA2612784,Information Technology and Decision Sciences,Female,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund; Wocum Programs,5
+2020,Ketura Obiyaa,UA2604072,Actuarial Science,Female,Wocum Programs,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,5
+96,LANDIWAY MAWUVI ALHASSAN,UA2616727,Information Technology and Decision Sciences,Female,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund; Wocum Programs,5
+32,MANU LINDA OWUSU,UA2622049,Information Technology and Decision Sciences,Female,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund; Wocum Programs,5
+394,SALMAAHMED,UA2612474,Chemical Sciences,Female,school cloth,Additional Programs; Exercise Book; Sticker; Student Support Fund; Wocum Programs,5
+94,ZAAVELA Tiah,UA2614347,Computer Science and Informatics,Female,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund; Wocum Programs,5
+276,Akom Richard,UA2605993,Statistics ,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+227,Angela Akura,UA2621821,Information Technology and Decision Sciences,Female,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth; Wocum Programs,4
+101,Apaawin Louis Awinsobit,UA2602608,Statistics ,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+117,Awini Issah Sani Danjumah,UA2622043,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+49,BOAKYE STANLEY APRAKU,UA2601188,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+497,Bryna Kyeremaa,UA2612672,Actuarial Science,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+239,Emeralda Selinam Saka,UA2609095,Actuarial Science,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+116,EMMANUEL KOFI OPPONG,UA2619799,Computer Science and Informatics,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+182,Emmanuel Marfo,UA2600572,Mathematics,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+426,Emmanuella Fremah Sarfo,UA2606960,Actuarial Science,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+61,Felix Essilfie Barnor jnr,UA2610755,Computer Science and Informatics,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+301,Francisca Odomaa Amponsah,UA2623037,Statistics ,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+74,Gladys Aduko,UA2603194,Actuarial Science,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+176,Hajara Saeed,UA2614447,Medical Laboratory Science,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+261,Henry Degraft Quayson,UA2620155,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+109,JACOB JITO,UA2619973,Computer Science and Informatics,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+115,James ofori yeboah,UA2613011,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+196,Karim Abiba,UA2621674,Information Technology and Decision Sciences,Female,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth; Wocum Programs,4
+10,KELVIN ABBAN,UA2613037,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+37,Kwaku Antwi Dankwah,UA2619968,Actuarial Science,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+126,Mark  Awuah Afrane,UA2613265,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+137,Martha Akongah,UA2601531,Information Technology and Decision Sciences,Female,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth; Wocum Programs,4
+17,MAXIMILIAN KODUAH TWENEBOAH,UA2615769,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+309,MENSAH SAMMUEL,UA2613521,Biological Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+58,Newton Bridget Achiaa  Frimpong,UA2614837,Statistics ,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+55,Nkrumah Mustapha Sabit Tano,UA2614319,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+209,Norbet Davies,UA2622182,Medical Laboratory Science,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+254,Praise Asante,UA2610456,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+363,Prince Opoku Ware,UA2608047,Statistics ,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+1390,Ransford Kyere,UA2603083,Medical Laboratory Science,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+141,Sakyi Lydia,UA2605642,Actuarial Science,Female,Sticker; Wocum Programs,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+353,Samuel Kweku Annor,UA2612121,Actuarial Science,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+131,Theophilus Andoh,UA2614554,Actuarial Science,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+25,TOFIK OSMAN,UA2600398,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+51,Vincent Damoah,UA2609603,Mathematics,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+42,VITUS KAMBAWAABA,UA2608950,Information Technology and Decision Sciences,Male,Sticker,Additional Programs; Exercise Book; school cloth; Student Support Fund,4
+299,Agnes Kyeremaa,UA2608294,Information Technology and Decision Sciences,Female,Sticker; Student Support Fund; Wocum Programs,Additional Programs; Exercise Book; school cloth,3
+412,AGYEI MICHAEL FRIMPONG ADDAI,UA2608996,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+204,AGYEMANG PHILIP KWAKU,UA2619601,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+454,Akua Sefa Mintah,UA2603128,Information Technology and Decision Sciences,Female,Sticker; Student Support Fund; Wocum Programs,Additional Programs; Exercise Book; school cloth,3
+335,Dacosta Junior Buabeng,UA2615562,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+359,ELVIS ATTA ACHEAW,UA2603315,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+352,Emmanuel Mulatey,UA2603049,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+114,Fredrick Antwin Yeboah,UA2604506,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+368,Karen Owusu-Ansah,UA2612884,Nursing,Female,Exercise Book; Sticker; Student Support Fund,Additional Programs; school cloth; Wocum Programs,3
+449,Kyeremeh Kelvin,UA2605552,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+379,Maria Ibrahim,UA2612000,Information Technology and Decision Sciences,Female,Sticker; Student Support Fund; Wocum Programs,Additional Programs; Exercise Book; school cloth,3
+482,Nana Agyemang Kedja Lopez,UA2621858,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+345,Princess Obeng Gyabaah,UA2603571,Information Technology and Decision Sciences,Female,Sticker; Student Support Fund; Wocum Programs,Additional Programs; Exercise Book; school cloth,3
+310,Sogah Christian,UA2615036,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+170,Theophilus Quaning,UA2607546,Information Technology and Decision Sciences,Male,Sticker; Student Support Fund,Additional Programs; Exercise Book; school cloth,3
+153,Abale Godslove Adipare,UA2622189,Medical Laboratory Science,Male,Additional Programs; Exercise Book; Sticker; Student Support Fund,school cloth,1
+1782,Addai Jackline Damoaa,UA2620641,Biological Sciences,Female,Additional Programs; school cloth; Sticker; Student Support Fund; Wocum Programs,Exercise Book,1
+1496,Agyei Christabel Ofori,UA2615161,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+2087,Alhassan Zenabu,UA2609991,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+370,Anas Abidat Abatanie,UA2610285,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+292,Appiah Henry Kwasi,UA2610017,Medical Laboratory Science,Male,Additional Programs; Exercise Book; school cloth; Student Support Fund,Sticker,1
+1596,Arianna Mantibiyaa Larbi,UA2602011,Biological Sciences,Female,Exercise Book; school cloth; Sticker; Student Support Fund; Wocum Programs,Additional Programs,1
+1213,Benedicta Ekunaatu Damba- Seidu,UA2600875,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+2254,BENEDICTUS TUTENG,UA2603329,Chemical Sciences,Male,Exercise Book; school cloth; Sticker; Student Support Fund,Additional Programs,1
+1387,Benjamin Apoh Amoah,UA2613757,Computer Science and Informatics,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+1206,Blessing Addai,UA2607443,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+1114,BOAKYE ISREAL YEBOAH,UA2615894,Biological Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+722,Britney Danyi Asigeh,UA2612636,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+1688,Carlos Amo,UA2614280,Biological Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+1461,Elvista Kyerewaa Antwi,UA2606415,Computer Science and Informatics,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+1525,Emmanuella Oppong,UA2608933,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+87,Erica Pokuaa Amoah,UA2608811,Medical Laboratory Science,Female,Additional Programs; Exercise Book; Sticker; Student Support Fund; Wocum Programs,school cloth,1
+1202,Faustina Agyeiwaa,UA2607222,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+236,GABRIEL OBENG YEBOAH,UA2620045,Information Technology and Decision Sciences,Male,Additional Programs; Exercise Book; school cloth; Sticker,Student Support Fund,1
+1437,Grace Anane,UA2601122,Biological Sciences,Female,Exercise Book; school cloth; Sticker; Student Support Fund; Wocum Programs,Additional Programs,1
+574,HANNAH KWAKYE,UA2619192,Biological Sciences,Female,Additional Programs; Exercise Book; Sticker; Student Support Fund; Wocum Programs,school cloth,1
+169,HENRY OWUSU ANSAH,UA2611019,Information Technology and Decision Sciences,Male,Additional Programs; Exercise Book; Sticker; Student Support Fund,school cloth,1
+986,Kingsley Kwaku Brentuo,UA2610698,Medical Laboratory Science,Male,Additional Programs; Exercise Book; Sticker; Student Support Fund,school cloth,1
+795,Korkor Stephanie Alele,UA2610505,Chemical Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+629,Kwarteng Boadi Japhet,UA2617073,Medical Laboratory Science,Male,Exercise Book; school cloth; Sticker; Student Support Fund,Additional Programs,1
+1870,Michelle Nhyira Botchway,UA2612310,Chemical Sciences,Female,Additional Programs; Exercise Book; school cloth; Student Support Fund; Wocum Programs,Sticker,1
+1717,Modey Delight,UA2603988,Information Technology and Decision Sciences,Female,Additional Programs; school cloth; Sticker; Student Support Fund; Wocum Programs,Exercise Book,1
+224,Ms Amankwaa Stephanie Henewaa,UA2610196,Medical Laboratory Science,Female,Exercise Book; school cloth; Sticker; Student Support Fund; Wocum Programs,Additional Programs,1
+2172,Osei Derick Afiyie,UA2614294,Information Technology and Decision Sciences,Male,Exercise Book; school cloth; Sticker; Student Support Fund,Additional Programs,1
+1557,Oti Frimpomaa Princess,UA2607243,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1
+1159,Prince Essien,UA2601151,Computer Science and Informatics,Male,Additional Programs; school cloth; Sticker; Student Support Fund,Exercise Book,1
+1130,Yakubu Abdul Latif,UA2615218,Information Technology and Decision Sciences,Female,Additional Programs; Exercise Book; school cloth; Sticker; Student Support Fund,Wocum Programs,1

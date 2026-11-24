@@ -1,0 +1,7 @@
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E9EEF9','primaryTextColor':'#111111','primaryBorderColor':'#0D2063','lineColor':'#33415C','secondaryColor':'#FFF4D6','tertiaryColor':'#F7F9FC','fontFamily':'Times New Roman','fontSize':'16px','edgeLabelBackground':'#FFFFFF'}}}%%
+erDiagram
+  DEPARTMENTS ||--o{ DUES_ITEMS : defines
+  SOUVENIRS ||--o{ STUDENT_SOUVENIRS : given
+  DEPARTMENTS ||--o{ FRESHER_APPLICATIONS : receives
+  USERS ||--o{ FRESHER_APPLICATIONS : verifies
+  USERS ||--o{ TRANSACTION_LOG : acts

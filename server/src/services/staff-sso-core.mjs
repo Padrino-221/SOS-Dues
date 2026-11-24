@@ -1,0 +1,39 @@
+import {provisioningSchema} from './provision.mjs';
+import * as oidc from 'openid-client';
+import {randomBytes,createHash,createCipheriv,createDecipheriv} from 'node:crypto';
+export const schema=`
+CREATE TABLE IF NOT EXISTS staff_sso_links(app_id text NOT NULL,hub_staff_id uuid NOT NULL,local_user_id text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(app_id,hub_staff_id),UNIQUE(app_id,local_user_id));
+CREATE TABLE IF NOT EXISTS staff_sso_departments(app_id text NOT NULL,hub_department_id text NOT NULL,local_department_id text NOT NULL,PRIMARY KEY(app_id,hub_department_id));
+CREATE TABLE IF NOT EXISTS staff_sso_flows(id text PRIMARY KEY,app_id text NOT NULL,state text NOT NULL,nonce text NOT NULL,verifier text NOT NULL,expires_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS staff_sso_sessions(id text PRIMARY KEY,app_id text NOT NULL,hub_staff_id uuid NOT NULL,identity_sub text NOT NULL,token_cipher text NOT NULL,expires_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS staff_sso_handoffs(id text PRIMARY KEY,app_id text NOT NULL,session_id text NOT NULL,expires_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS staff_sso_expiry ON staff_sso_sessions(expires_at);`+provisioningSchema;
+const hash=v=>createHash('sha256').update(v).digest('hex');
+const failure=(message='Staff Access could not authorise this account.',status=403)=>Object.assign(new Error(message),{status});
+export function createAdapter({appId,query,provision,origin=process.env.STAFF_SSO_ORIGIN,issuer=process.env.STAFF_SSO_ISSUER,hub=process.env.STAFF_SSO_HUB_ORIGIN,secret=process.env.STAFF_SSO_SECRET}){
+ const enabled=()=>process.env.STAFF_SSO_ENABLED==='true';
+ const cookie='staff_sso_'+appId.replaceAll('-','_'),flowCookie=cookie+'_flow';
+ let clientPromise;const refreshes=new Map();
+ function settings(){if(!origin||!issuer||!hub||!secret||secret.length<32)throw failure('Staff sign in is not ready. Contact technical support.',503);for(const address of [origin,issuer,hub]){const u=new URL(address);if(u.protocol!=='https:'&&!(u.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(u.hostname)))throw failure('Invalid identity service configuration.',503);}return {callback:origin+'/api/auth/staff-sso/'+appId+'/callback',key:createHash('sha256').update(secret).digest()};}
+ function client(){settings();return clientPromise??=oidc.discovery(new URL(issuer),appId,{token_endpoint_auth_method:'none'},oidc.None(),new URL(issuer).protocol==='http:'?{execute:[oidc.allowInsecureRequests]}:undefined).catch(e=>{clientPromise=undefined;throw e;});}
+ function encrypt(value){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',settings().key,iv),data=Buffer.concat([c.update(JSON.stringify(value)),c.final()]);return Buffer.concat([iv,c.getAuthTag(),data]).toString('base64url');}
+ function decrypt(value){const b=Buffer.from(value,'base64url'),d=createDecipheriv('aes-256-gcm',settings().key,b.subarray(0,12));d.setAuthTag(b.subarray(12,28));return JSON.parse(Buffer.concat([d.update(b.subarray(28)),d.final()]).toString());}
+ async function entitlement(token){const r=await fetch(hub+'/api/access/'+appId,{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw failure(r.status>=500?'Staff Access is temporarily unavailable. Please try again.':'Your account does not currently have access to this application.',r.status>=500?503:403);const raw=await r.json();const value={...raw,role:raw.app_role,department_id:raw.app_department_id};if(!value.sub||!value.identity_sub||!value.role)throw failure();return value;}
+ async function resolve(value){
+ const [link]=await query('SELECT local_user_id FROM staff_sso_links WHERE app_id=$1 AND hub_staff_id=$2::uuid',[appId,value.sub]);
+ let departmentId=null;
+ if(value.department_id){const [d]=await query('SELECT local_department_id FROM staff_sso_departments WHERE app_id=$1 AND hub_department_id=$2',[appId,value.department_id]);if(!d)throw failure('Your department has not been linked to this system. Contact your administrator.');departmentId=d.local_department_id;}
+ const localId=provision?await provision({hubStaffId:value.sub,name:value.name,email:value.email,role:value.role,departmentId,existingLocalId:link?.local_user_id}):link?.local_user_id;
+ if(!localId)throw failure('Your staff account has not been linked to this system. Contact your administrator.');
+ return {localId,role:value.role,departmentId,hubStaffId:value.sub,identitySub:value.identity_sub};
+ }
+
+ async function start(){if(!enabled())throw failure('Central sign in is not enabled.',404);const c=await client(),flow=randomBytes(32).toString('base64url'),state=oidc.randomState(),nonce=oidc.randomNonce(),verifier=oidc.randomPKCECodeVerifier();await query('DELETE FROM staff_sso_flows WHERE expires_at<now()',[]);await query("INSERT INTO staff_sso_flows(id,app_id,state,nonce,verifier,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '5 minutes')",[hash(flow),appId,state,nonce,verifier]);const url=oidc.buildAuthorizationUrl(c,{redirect_uri:settings().callback,scope:'openid profile email',state,nonce,code_challenge:await oidc.calculatePKCECodeChallenge(verifier),code_challenge_method:'S256'});return {url:url.href,flow};}
+ async function callback(url,flow){if(!enabled()||!flow)throw failure('The sign-in request has expired. Please start again.',400);const [f]=await query('DELETE FROM staff_sso_flows WHERE id=$1 AND app_id=$2 AND expires_at>now() RETURNING *',[hash(flow),appId]);if(!f)throw failure('The sign-in request has expired. Please start again.',400);const tokens=await oidc.authorizationCodeGrant(await client(),new URL(url),{expectedState:f.state,expectedNonce:f.nonce,pkceCodeVerifier:f.verifier,idTokenExpected:true});const value=await entitlement(tokens.access_token);if(tokens.claims()?.sub!==value.identity_sub)throw failure();const identity=await resolve(value),sid=randomBytes(32).toString('base64url');await query('DELETE FROM staff_sso_sessions WHERE expires_at<now()',[]);await query("INSERT INTO staff_sso_sessions(id,app_id,hub_staff_id,identity_sub,token_cipher,expires_at) VALUES($1,$2,$3::uuid,$4,$5,now()+interval '8 hours')",[hash(sid),appId,value.sub,value.identity_sub,encrypt({access_token:tokens.access_token,refresh_token:tokens.refresh_token,expires:Date.now()+(tokens.expires_in||300)*1000})]);return {sid,identity};}
+ async function authenticate(sid){if(!enabled()||!sid)return null;try{const [s]=await query('SELECT * FROM staff_sso_sessions WHERE id=$1 AND app_id=$2 AND expires_at>now()',[hash(sid),appId]);if(!s)return null;let tokens=decrypt(s.token_cipher);if(tokens.expires<Date.now()+15000){if(!tokens.refresh_token)return null;let task=refreshes.get(s.id);if(!task){task=(async()=>{const next=await oidc.refreshTokenGrant(await client(),tokens.refresh_token);const updated={access_token:next.access_token,refresh_token:next.refresh_token||tokens.refresh_token,expires:Date.now()+(next.expires_in||300)*1000};await query('UPDATE staff_sso_sessions SET token_cipher=$1 WHERE id=$2',[encrypt(updated),s.id]);return updated;})();refreshes.set(s.id,task);task.finally(()=>refreshes.delete(s.id)).catch(()=>{});}tokens=await task;}
+ const value=await entitlement(tokens.access_token);if(value.sub!==s.hub_staff_id||value.identity_sub!==s.identity_sub)return null;return await resolve(value);
+ }catch{return null;}}
+ async function logout(sid){if(sid)await query('DELETE FROM staff_sso_sessions WHERE id=$1 AND app_id=$2',[hash(sid),appId]);}
+ async function linked(localId){const sql='SELECT 1 FROM staff_sso_links WHERE app_id=$1 AND local_user_id=$2'+(process.env.STAFF_SSO_AUTO_PROVISION==='true'?' UNION ALL SELECT 1 FROM staff_sso_managed_accounts WHERE app_id=$1 AND local_user_id=$2 LIMIT 1':'');return !!(await query(sql,[appId,String(localId)])).length;}
+ return {appId,enabled,cookie,flowCookie,start,callback,authenticate,logout,linked};
+}

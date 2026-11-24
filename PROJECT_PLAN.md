@@ -15,12 +15,11 @@
 | Record **School dues + School souvenirs** (at fresher registration) | ✅ | ❌ | ❌ |
 | **Admit** freshers assigned to their department | ❌ | ✅ | ❌ |
 | Record **Department dues + Department souvenirs** (at fresher admission) | ❌ | ✅ | ❌ |
-| Add **continuing students** (single or bulk CSV import) | ❌ | ✅ | ❌ |
 | Create the department's **levels / classes** | ❌ | ✅ | ❌ |
 | **Configure the department's dues amount** | ❌ (view only) | ✅ | ❌ |
 | **Configure the department's souvenir list** | ❌ (view only) | ✅ | ❌ |
 | Manage the **School souvenir catalogue** | ✅ | ❌ | ❌ |
-| Record **continuing-student yearly dues** (School + Dept portions) | ❌ | ✅ | ✅ (public page) |
+| Record **continuing-student yearly dues** (free-flow: name + index + email + level/class) | ❌ | ✅ | ✅ (public page) |
 | Supervise — verify receipts / reports / audit / school settings | ✅ | dept-scoped | ❌ |
 
 > **Correction (from the School's real workflow):** department-level configuration —
@@ -35,12 +34,17 @@
 1. **Only freshers are created at School level.** The School Admin captures the
    fresher's record and assigns them to a department in the same step. No fresher
    exists without a department, and no other role can create one.
-2. **Continuing students are created only by their department** (Dept Admin),
-   individually or by bulk CSV import. The School Admin never creates continuing
-   students.
-3. **Reps never create students.** The public rep page works strictly on students
-   already in the system. If a student number is not found, the page says the
-   student must first be added by their department admin.
+2. **Continuing students have no roster.** The students table holds only the
+   fresher registration/admission workflow. Nobody creates or maintains rows for
+   continuing students — the receipts are the payment record.
+3. **Payments are free-flow — no student lookup.** The public rep page and the
+   Collect desk take the payer's **name + index number + email**, the **level**
+   (and the **class** when that level has classes) and the **dues being paid**,
+   then confirm on a separate screen. The payment is written straight to the
+   records: the receipt snapshots the typed name/index/email/level with
+   `student_id = NULL` and the receipt email goes to the captured address, so
+   a payer never has to exist beforehand — reports and the public records lookup
+   aggregate everything by index number.
 4. **Departments own their structure.** Each Dept Admin creates their own
    levels/classes. A class may be a whole level (e.g. "Level 200") or one of
    several classes within a level (e.g. "Level 200 A", "Level 200 B").
@@ -76,12 +80,14 @@ School Admin                  Dept Admin
 
 ### 2.2 Continuing students (every year)
 
-- Dept Admin adds continuing students to their department (single add, or
-  **bulk CSV import** — upload, **preview** which rows are valid, then confirm).
+- **There is no roster.** Continuing students are never listed, added or
+  imported — each payment simply lands in the records with the typed payer
+  details snapshotted on the receipt.
 - Continuing students pay **School dues AND Department dues every year**.
-- Collection happens through the **class rep public page** (dept code → class)
-  or by the Dept Admin in the dashboard.
-- One collection session = **one combined, itemized receipt** (one receipt
+- Collection is **free-flow** on the **class rep public page** (dept code → PIN)
+  or the Dept Admin's **Collect** page: enter name + index number, pick the level
+  (and class when the level has classes), pick the dues, confirm — no lookup.
+- One collection session = **one itemized receipt** (one receipt
   number) listing the School dues portion and the Department dues portion. That
   single receipt can be verified by **both** the School and the Department.
 
@@ -101,14 +107,14 @@ School Admin                  Dept Admin
 
 - Amounts auto-fill on collection forms (from the school-wide amount / the
   department's amount) but remain editable at the time of collection.
-- Payment methods: `cash`, `momo`, `bank`.
+- Payment methods: `cash`, `momo`.
 
 ---
 
 ## 4. Receipts
 
 - Every collection event creates a **receipt** with a unique receipt number
-  (`UENR-…`) and one or more itemized **payment lines**:
+  (`SOS-DUES-<TAG>-<index>-<n>`) and one or more itemized **payment lines**:
   - School-dues-only receipt (fresher registration)
   - Department-dues-only receipt (fresher admission)
   - Combined receipt with both lines (continuing-student yearly collection)
@@ -122,8 +128,8 @@ School Admin                  Dept Admin
 ## 5. Reporting
 
 - School Admin: school-wide — totals per department (department-dues revenue),
-  total school dues, per class/level, fresher vs continuing split, CSV export,
-  monthly trend, audit log.
+  total school dues, distinct payers and receipts per class/level, fresher
+  admission counts, CSV export, monthly trend, audit log.
 - Dept Admin: department-scoped equivalents (their own classes/levels and
   department-dues revenue).
 
@@ -150,7 +156,7 @@ School Admin                  Dept Admin
 | `classes` | Owned by a department (`department_id`), has `level` + `name`; a department can have several classes in one level |
 | `users` | `school_admin` / `dept_admin` (dept admins bound to one department) |
 | `students` | Name, unique `student_no`, `is_fresher`, `department_id`, `class_id`, `admitted_at/admitted_by` (fresher lifecycle) |
-| `receipts` | One per collection event; unique `receipt_number`, student, method, `record_type` (`admin`/`rep`) |
+| `receipts` | One per collection event; unique `receipt_number`, method, `record_type` (`admin`/`rep`). **Free-flow receipts** snapshot `student_name`, `student_no`, `payer_email`, `level` with `student_id = NULL`; student-linked receipts keep the FK and readers COALESCE both sources |
 | `payments` | Itemized lines under a receipt: `type` (`school_dues`/`department_dues`), amount, dept/class |
 | `souvenirs` | Catalog: `category` (`school`/`department`); department souvenirs carry a `department_id` (each department owns its list) |
 | `student_souvenirs` | Which souvenirs a fresher received, at which level, by whom |
@@ -163,11 +169,10 @@ School Admin                  Dept Admin
 | Route | Page | Role |
 |-------|------|------|
 | `/` | Landing — enter department code | Public |
-| `/rep/:code` | Class rep collection form (existing students only) | Public |
+| `/rep/:code` | Class rep collection form (free-flow, no student lookup) | Public |
 | `/login` | Login | Public |
 | `/admin` | Dashboard | School / Dept |
 | `/admin/freshers` | Register freshers + assign dept (School); assigned-freshers admit queue (Dept) | Both, role-aware |
-| `/admin/students` | Continuing students: list, add single, bulk import w/ preview | Dept |
 | `/admin/collect` | Record continuing-student yearly dues (combined receipt) | Dept |
 | `/admin/verify` | Verify receipt by number | Both, role-aware |
 | `/admin/reports` | Reports + CSV export | Both, role-aware |
@@ -180,6 +185,7 @@ School Admin                  Dept Admin
 
 - Role-based access control enforced in the API middleware (school-only /
   dept-scoped / public-rep).
-- Public rep endpoints are rate-limited and **never create students**.
+- Public rep endpoints are rate-limited and, once unlocked with the department
+  PIN, only ever write free-flow payment records for their own department.
 - JWT auth, bcrypt-hashed passwords, unique receipt numbers, audit trail for
-  every payment/student action.
+  every payment/fresher action.

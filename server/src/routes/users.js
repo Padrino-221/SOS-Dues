@@ -6,6 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use('/course-reps', require('./courseReps'));
 
 // Enforce a minimum password strength for admin accounts.
 function validatePassword(password) {
@@ -20,7 +21,7 @@ function validatePassword(password) {
 
 router.get('/', async (req, res, next) => {
   try {
-    // School admin sees all; school_staff is blocked; dept admins see only their department's dept users
+    // Super admin sees all (same as school admin); school_staff is blocked; dept admins see only their department's dept users
     if (req.user.role === 'school_staff') throw new (require('../utils/errors').AppError)('Access denied', 403);
     if (req.user.role === 'dept_staff') throw new (require('../utils/errors').AppError)('Access denied', 403);
     if (req.user.role === 'dept_admin') {
@@ -42,11 +43,11 @@ router.get('/', async (req, res, next) => {
       );
       return res.json(rows);
     }
-    // school_admin
+    // school_admin + super_admin (full view)
     const role = String(req.query.role || '').toLowerCase();
     let where = '';
     const params = [];
-    if (['school_admin', 'school_staff', 'dept_admin', 'dept_staff'].includes(role)) {
+    if (['school_admin', 'school_staff', 'dept_admin', 'dept_staff', 'super_admin'].includes(role)) {
       where = 'WHERE u.role = $1';
       params.push(role);
     }
@@ -65,9 +66,13 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const { name, email, password, department_id, role } = req.body;
-    const allowed = ['school_admin', 'school_staff', 'dept_admin', 'dept_staff'];
+    const allowed = ['school_admin', 'school_staff', 'dept_admin', 'dept_staff', 'super_admin'];
     const targetRole = allowed.includes(role) ? role : 'dept_admin';
-    // Permission: school_admin can create any; dept_admin can only create dept_staff in own dept
+    // Only a super admin may create another super admin.
+    if (targetRole === 'super_admin' && req.user.role !== 'super_admin') {
+      throw new (require('../utils/errors').AppError)('Only a super admin can create a super admin', 403);
+    }
+    // Permission: school_admin/super_admin can create any; dept_admin can only create dept_staff in own dept
     if (req.user.role === 'school_staff' || req.user.role === 'dept_staff') {
       throw new (require('../utils/errors').AppError)('Access denied', 403);
     }
@@ -80,6 +85,14 @@ router.post('/', async (req, res, next) => {
     }
     if (req.user.role === 'school_admin' && targetRole === 'school_admin') {
       // allowed — main creating another main
+    }
+    // Only a super admin may touch super admin or school admin accounts.
+    if (
+      (targetRole === 'super_admin' || targetRole === 'school_admin') &&
+      req.user.role !== 'super_admin' &&
+      req.user.role !== 'school_admin'
+    ) {
+      throw new (require('../utils/errors').AppError)('Access denied', 403);
     }
 
     if (!name || !email || !password) {
@@ -133,8 +146,22 @@ router.put('/:id', async (req, res, next) => {
     const existing = await pool.query('SELECT id, role, department_id FROM users WHERE id = $1', [req.params.id]);
     if (existing.rows.length === 0) throw new AppError('Admin not found', 404);
     const currentRole = existing.rows[0].role;
-    const allowedRoles = ['school_admin', 'school_staff', 'dept_admin', 'dept_staff'];
+    const allowedRoles = ['school_admin', 'school_staff', 'dept_admin', 'dept_staff', 'super_admin'];
     const targetRole = role && allowedRoles.includes(role) ? role : currentRole;
+    // Only a super admin may assign the super admin role or edit a super admin account.
+    if (
+      (targetRole === 'super_admin' || currentRole === 'super_admin') &&
+      req.user.role !== 'super_admin'
+    ) {
+      throw new (require('../utils/errors').AppError)('Only a super admin can manage super admin accounts', 403);
+    }
+    // Only school-side (school_admin / super_admin) may assign school-side roles.
+    if (
+      (targetRole === 'school_admin' || targetRole === 'school_staff') &&
+      !['school_admin', 'super_admin'].includes(req.user.role)
+    ) {
+      throw new (require('../utils/errors').AppError)('Access denied', 403);
+    }
 
     if ((targetRole === 'dept_admin' || targetRole === 'dept_staff') && !department_id && !existing.rows[0].department_id) {
       throw new AppError('Department is required for department accounts', 400);
@@ -176,6 +203,7 @@ router.put('/:id', async (req, res, next) => {
 });
 
 router.delete('/:id', async (req, res, next) => {
+  const client = await pool.connect();
   try {
     if (Number(req.params.id) === req.user.id) {
       throw new AppError('You cannot delete your own account', 400);
@@ -183,26 +211,58 @@ router.delete('/:id', async (req, res, next) => {
     if (req.user.role === 'school_staff' || req.user.role === 'dept_staff') {
       throw new (require('../utils/errors').AppError)('Access denied', 403);
     }
+
+    // Read the target and delete it inside one transaction so the permission
+    // checks can never be bypassed by a role/department change happening
+    // between the check and the DELETE.
+    await client.query('BEGIN');
+    const { rows: targets } = await client.query(
+      'SELECT id, role, department_id FROM users WHERE id = $1 FOR UPDATE',
+      [req.params.id]
+    );
+    if (targets.length === 0) throw new AppError('Admin not found', 404);
+    const target = targets[0];
+
     if (req.user.role === 'dept_admin') {
-      const target = await pool.query('SELECT department_id, role FROM users WHERE id = $1', [req.params.id]);
-      if (target.rows.length === 0) throw new AppError('Admin not found', 404);
-      if (target.rows[0].department_id !== req.user.department_id || target.rows[0].role !== 'dept_staff') {
-        throw new (require('../utils/errors').AppError)('Dept admins can only delete dept staff in own department', 403);
+      if (target.department_id !== req.user.department_id || target.role !== 'dept_staff') {
+        throw new (require('../utils/errors').AppError)(
+          'Dept admins can only delete dept staff in own department',
+          403
+        );
       }
     }
-    const { rows } = await pool.query('DELETE FROM users WHERE id=$1 RETURNING id, role', [req.params.id]);
+
+    // School admins manage dept/school-staff accounts but may not delete a
+    // school admin or super admin — that is a super-admin-only power.
+    if (req.user.role === 'school_admin' && ['school_admin', 'super_admin'].includes(target.role)) {
+      throw new (require('../utils/errors').AppError)(
+        'Only a super admin can delete school or super admin accounts',
+        403
+      );
+    }
+
+    const { rows } = await client.query('DELETE FROM users WHERE id=$1 RETURNING id, role', [
+      req.params.id,
+    ]);
     if (rows.length === 0) throw new AppError('Admin not found', 404);
+    await client.query('COMMIT');
+
     const label =
-      rows[0].role === 'school_admin'
-        ? 'School admin'
-        : rows[0].role === 'school_staff'
-          ? 'School staff'
-          : rows[0].role === 'dept_staff'
-            ? 'Department staff'
-            : 'Department admin';
+      rows[0].role === 'super_admin'
+        ? 'Super admin'
+        : rows[0].role === 'school_admin'
+          ? 'School admin'
+          : rows[0].role === 'school_staff'
+            ? 'School staff'
+            : rows[0].role === 'dept_staff'
+              ? 'Department staff'
+              : 'Department admin';
     res.json({ message: `${label} deleted` });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
+  } finally {
+    client.release();
   }
 });
 

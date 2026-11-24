@@ -1,7 +1,7 @@
 # Dues Management System (v2)
 ## School of Sciences — University of Energy and Natural Resources, Sunyani
 
-A centralised web application that manages student dues collection across the School of Sciences and its departments — fresher registration/admission, continuing-student yearly dues (School + Department portions), souvenir tracking, receipts, and reports.
+A centralised web application that manages student dues collection across the School of Sciences and its departments — fresher registration/admission, free-flow yearly-dues payments maintained as payment records (School + Department portions), souvenir tracking, receipts, and reports.
 
 > **v2 rebuild.** The role model matches the School's real workflow: the School Admin registers freshers, departments own their students and classes, and class reps collect yearly dues on a public page keyed by department code. See `PROJECT_PLAN.md` for the full spec.
 
@@ -101,11 +101,10 @@ Open **http://localhost:5173** in your browser.
 | Record School dues + School souvenirs (at registration) | ✅ | ❌ | ❌ |
 | Admit freshers assigned to their department | ❌ | ✅ | ❌ |
 | Record Department dues + Department souvenirs (at admission) | ❌ | ✅ | ❌ |
-| Add continuing students (single or bulk CSV import) | ❌ | ✅ | ❌ |
 | Create the department's levels / classes | ❌ | ✅ | ❌ |
 | Configure the department's dues amount | ❌ (view only) | ✅ | ❌ |
 | Configure the department's souvenir list | ❌ (view only) | ✅ | ❌ |
-| Record continuing-student yearly dues (School + Dept portions) | ❌ | ✅ | ✅ (public page) |
+| Record dues free-flow — type the payer's name + index + email, pick level/class, choose the dues | ❌ | ✅ | ✅ (public page) |
 | Supervise — verify receipts / reports / audit / school settings | ✅ | dept-scoped | ❌ |
 
 ### Freshers (first day)
@@ -118,21 +117,20 @@ Freshers therefore get **two receipts** across the two steps — the two collect
 
 ### Continuing students (every year)
 
-1. Dept Admin adds continuing students to their department — one at a time or by **bulk CSV import with preview** (upload/paste → see which rows are valid → confirm).
-2. Continuing students pay **School dues AND Department dues every year**. Collection happens through the **class rep public page** (department code → class) or by the Dept Admin on the **Collect Dues** page.
-3. One collection = **one combined, itemized receipt** (one receipt number) listing the School portion and the Department portion — verifiable by both the School and the department.
+1. **There is no continuing-student list.** Payments are the record: every collection is free-flow, and the receipts table holds each payment with the payer's typed **name**, **index number**, **email** and **level** snapshotted on it — no roster row is ever created or maintained.
+2. Whether collected on the **class rep public page** or the Dept Admin's **Collect Dues** page, the collector types the payer's **name and index number**, selects the **level** (and the **class** when that level has classes), selects **which dues** are being paid, and confirms on a review screen. **No student lookup happens before paying.**
+3. One collection = **one itemized receipt** (one receipt number) listing the School and/or Department portions — verifiable by both the School and the department. The **Receipts** page and **Reports** aggregate everything by index number, and the public **`/records`** page shows any payer's full history straight from their receipts.
 
 ## Public pages (no login)
 
 - **`/`** — Landing. Enter a **department access code** to open the class-rep collection form.
-- **`/rep/:code`** — Yearly-dues collection. The rep selects the class, enters the **student number**, and the system only continues if that student already exists in that class (reps **never create students** — if not found, the page says to ask the department admin). Then amounts (School + Department dues, pre-filled) and method are confirmed, producing one combined receipt.
+- **`/rep/:code`** — Yearly-dues collection, fully free-flow. After the department PIN unlock, the rep enters the **student's name, index number and email**, selects the **level** (plus the **class** when that level has classes), then selects **which dues** the student is paying (amounts pre-filled and editable) and method, and confirms on a separate review screen. There is **no lookup against existing student records** — the payment is written straight to the records and one receipt is issued.
 
 ## Admin pages (require login)
 
 - **`/admin`** — Dashboard: collected dues, pending fresher admissions, recent receipts, monthly flow.
 - **`/admin/freshers`** — School Admin: register/edit freshers + assign departments. Dept Admin: **admit** assigned freshers (pending / admitted tabs).
-- **`/admin/students`** — Dept Admin: add continuing students, **bulk CSV import with preview**, collect dues per row. School Admin: browse all continuing students.
-- **`/admin/collect`** — Dept Admin: record a continuing student's yearly dues as one combined receipt.
+- **`/admin/collect`** — Dept Admin: free-flow collection desk — enter the payer's name + index number + email, pick level/class, select the dues, confirm, and issue the receipt. No student search.
 - **`/admin/receipts`** — Every receipt issued (school registrations, fresher admissions, yearly collections, rep collections).
 - **`/admin/verify`** — Verify a receipt by number; shows the itemized School/Department breakdown.
 - **`/admin/reports`** — Totals by department and class/level, monthly trend, date filtering, CSV export.
@@ -148,7 +146,8 @@ Freshers therefore get **two receipts** across the two steps — the two collect
 
 ## Receipts
 
-- Every collection event creates a receipt with a unique number in the format `SOS-DUES-<TYPE>-<student-number>-<n>` — for example `SOS-DUES-SCH-UEB3227523-1`. `<TYPE>` is `SCH` (School-dues-only, e.g. fresher registration), `DEPT` (Department-dues-only, e.g. fresher admission) or `DUES` (combined continuing-student collection). `<n>` is a per-student counter that keeps counting for the student's lifetime.
+- Every collection event creates a receipt with a unique number in the format `SOS-DUES-<TYPE>-<student-number>-<n>` — for example `SOS-DUES-SCH-UEB3227523-1`. `<TYPE>` is `SCH` (School-dues-only, e.g. fresher registration), `DEPT` (Department-dues-only, e.g. fresher admission) or `DUES` (combined collection). `<n>` is a lifetime counter per index number that keeps counting across every receipt issued under that number.
+- **Free-flow receipts** (rep page / Collect desk) carry the payer's typed **name, index number, email and level** on the receipt itself and are not linked to a student record; the receipt email is sent to that captured address as the payment is recorded. Student-linked receipts (fresher registration / admission) resolve those fields through the student row. Reports, verify and exports read both the same way.
 - Receipts are shown on screen, e-mailed (dev mode logs them when no SMTP is configured), and verifiable on the admin Verify page.
 - School Admin verifies any receipt; a Dept Admin verifies receipts issued in their department.
 
@@ -186,7 +185,7 @@ The student's e-mail is used when available; set `RECEIPT_EMAIL_TO` to force eve
 
 ## Security Notes
 
-- Role-based access is enforced in the API (school-only registration, department-scoped continuing students and classes, public rep routes that can never create students).
+- Role-based access is enforced in the API (school-only registration, department-scoped freshers and classes). The public rep routes record free-flow payments only after an unlocked, department-scoped PIN session, and can only write to their own department.
 - The public rep endpoints are rate-limited.
 - Admin routes require a valid JWT. Department admins can only see/manage their own department's data.
 - Change `JWT_SECRET` in `server/.env` before any production deployment.

@@ -4,12 +4,12 @@ import { io } from 'socket.io-client';
 let socket = null;
 let authedToken = null;
 
-// Socket.IO needs a long-lived server. It is enabled in local development (the
-// Vite proxy forwards /socket.io to the API) and can be turned on for a
-// deployment that has a WebSocket-capable backend via VITE_REALTIME=on. On a
-// plain Vercel serverless deployment it stays off so the app never opens a
-// socket that cannot connect.
-const REALTIME_ENABLED = import.meta.env.DEV || import.meta.env.VITE_REALTIME === 'on';
+// Realtime is on by default: the app runs on a long-lived API (pm2) behind
+// nginx, which proxies /socket.io/ with WebSocket upgrade. Set
+// VITE_REALTIME=off at build time to opt out (e.g. a serverless deployment
+// where there is no long-lived WebSocket backend — the client then never
+// opens a socket that cannot connect).
+const REALTIME_ENABLED = import.meta.env.VITE_REALTIME !== 'off';
 
 /**
  * Make sure a socket exists that matches the current auth token.

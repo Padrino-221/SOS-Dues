@@ -8,7 +8,7 @@ const router = express.Router();
 router.use(requireAuth, requireAnyAdmin);
 
 function assertCanManageSouvenirs(req) {
-  if (!['school_admin', 'dept_admin'].includes(req.user.role)) {
+  if (!['school_admin', 'super_admin', 'dept_admin'].includes(req.user.role)) {
     throw new AppError('Only School or Department Admins can manage souvenirs', 403);
   }
 }
@@ -49,7 +49,7 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     assertCanManageSouvenirs(req);
-    const { name, category, cost } = req.body;
+    const { name, category } = req.body;
     if (!name) throw new AppError('Souvenir name is required', 400);
 
     let cat = category === 'department' ? 'department' : 'school';
@@ -71,14 +71,14 @@ router.post('/', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO souvenirs (name, category, department_id, cost)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [name, cat, departmentId, cost ?? 0]
+      `INSERT INTO souvenirs (name, category, department_id)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [name, cat, departmentId]
     );
 
     await logTransaction({
       admin_id: req.user.id,
-      admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
+      admin_role: req.user.role === 'super_admin' ? 'SUPER_ADMIN' : req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'souvenir_create',
       description: `Created ${cat} souvenir "${name}"`,
       meta: {
@@ -86,7 +86,6 @@ router.post('/', async (req, res, next) => {
         name,
         category: cat,
         department_id: departmentId,
-        cost: cost ?? 0,
       },
     });
 
@@ -100,7 +99,7 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     assertCanManageSouvenirs(req);
-    const { name, category, cost } = req.body;
+    const { name, category } = req.body;
     const existing = await pool.query('SELECT * FROM souvenirs WHERE id = $1', [req.params.id]);
     if (existing.rows.length === 0) throw new AppError('Souvenir not found', 404);
     const row = existing.rows[0];
@@ -127,16 +126,16 @@ router.put('/:id', async (req, res, next) => {
 
     const cat = row.category;
     const { rows } = await pool.query(
-      'UPDATE souvenirs SET name = $1, category = $2, cost = $3 WHERE id = $4 RETURNING *',
-      [name, cat, cost ?? row.cost, req.params.id]
+      'UPDATE souvenirs SET name = $1, category = $2 WHERE id = $3 RETURNING *',
+      [name, cat, req.params.id]
     );
 
     await logTransaction({
       admin_id: req.user.id,
-      admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
+      admin_role: req.user.role === 'super_admin' ? 'SUPER_ADMIN' : req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'souvenir_update',
       description: `Updated ${cat} souvenir "${name}"`,
-      meta: { souvenir_id: Number(req.params.id), name, category: cat, cost: cost ?? row.cost },
+      meta: { souvenir_id: Number(req.params.id), name, category: cat },
     });
 
     res.json(rows[0]);
@@ -171,7 +170,7 @@ router.delete('/:id', async (req, res, next) => {
 
     await logTransaction({
       admin_id: req.user.id,
-      admin_role: req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
+      admin_role: req.user.role === 'super_admin' ? 'SUPER_ADMIN' : req.user.role === 'school_admin' ? 'SCHOOL_ADMIN' : 'DEPT_ADMIN',
       transaction_type: 'souvenir_delete',
       description: `Deleted ${rows[0].category} souvenir "${rows[0].name}"`,
       meta: { souvenir_id: rows[0].id },

@@ -1,0 +1,8 @@
+.staff-access-alternative{margin-top:22px;width:100%;font-family:inherit;--staff-access-accent:var(--brand,var(--color-brand-700,#0d2063))}
+.staff-access-alternative .staff-access-divider{display:flex;align-items:center;gap:12px;margin-bottom:16px;color:#697386;font-size:11px;line-height:1.5;text-align:center;text-transform:uppercase;letter-spacing:.08em}
+.staff-access-alternative .staff-access-divider:before,.staff-access-alternative .staff-access-divider:after{content:'';height:1px;flex:1;background:#e1e5ec}
+.staff-access-alternative .staff-access-link{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:46px;box-sizing:border-box;padding:12px 16px;border:1px solid #cbd3e0;border-radius:6px;background:transparent;color:var(--staff-access-accent);font-family:inherit;font-size:13px;font-weight:600;line-height:1.5;text-decoration:none;box-shadow:none;transition:background-color .15s,border-color .15s}
+.staff-access-alternative .staff-access-link:hover{background:#f5f7fb;border-color:var(--staff-access-accent);text-decoration:none;box-shadow:none}
+.staff-access-alternative .staff-access-link:focus-visible{outline:2px solid var(--staff-access-accent);outline-offset:3px;box-shadow:none}
+.staff-access-alternative .staff-access-link svg{width:18px;height:18px;flex-shrink:0}
+@media(prefers-reduced-motion:reduce){.staff-access-alternative .staff-access-link{transition:none}}

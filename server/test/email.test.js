@@ -148,7 +148,7 @@ test('generateReceiptHtml generates styled HTML with design system elements', ()
   const html = generateReceiptHtml({
     studentName: 'Alex Kwesi',
     studentNo: 'COMP202401',
-    receiptNumber: 'SOS-DUES-DUES-COMP202401-1',
+    receiptNumber: 'SOS-DUES-FULL-COMP202401-1',
     paidAt: new Date('2026-09-15T14:30:00Z'),
     methodLabel: 'CASH',
     numericTotal: 150,
@@ -159,12 +159,12 @@ test('generateReceiptHtml generates styled HTML with design system elements', ()
     safeSouvenirs: ['Department T-Shirt'],
     departmentName: 'Computer Science',
     souvenirOnly: false,
-    subject: 'Dues Receipt — SOS-DUES-DUES-COMP202401-1',
+    subject: 'Dues Receipt — SOS-DUES-FULL-COMP202401-1',
   });
 
   assert.ok(html.includes('SCHOOL OF SCIENCES'));
   assert.ok(html.includes('University of Energy and Natural Resources'));
-  assert.ok(html.includes('SOS-DUES-DUES-COMP202401-1'));
+  assert.ok(html.includes('SOS-DUES-FULL-COMP202401-1'));
   assert.ok(html.includes('Alex Kwesi'));
   assert.ok(html.includes('COMP202401'));
   assert.ok(html.includes('Computer Science'));
@@ -179,7 +179,7 @@ test('generateReceiptHtml shows only the date for a date-only payment (no false 
   const html = generateReceiptHtml({
     studentName: 'Alex Kwesi',
     studentNo: 'COMP202401',
-    receiptNumber: 'SOS-DUES-DUES-COMP202401-2',
+    receiptNumber: 'SOS-DUES-FULL-COMP202401-2',
     paidAt: new Date('2026-09-17T00:00:00Z'), // date-only picker value stored at midnight
     methodLabel: 'CASH',
     numericTotal: 50,
@@ -197,7 +197,7 @@ test('generateReceiptHtml shows the time for a real timestamp', () => {
   const html = generateReceiptHtml({
     studentName: 'Alex Kwesi',
     studentNo: 'COMP202401',
-    receiptNumber: 'SOS-DUES-DUES-COMP202401-3',
+    receiptNumber: 'SOS-DUES-FULL-COMP202401-3',
     paidAt: new Date('2026-09-17T14:30:00Z'),
     methodLabel: 'CASH',
     numericTotal: 50,

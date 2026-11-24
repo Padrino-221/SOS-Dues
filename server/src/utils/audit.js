@@ -9,10 +9,15 @@ const pool = require('../db/pool');
  * @param {string}  opts.transaction_type - e.g. 'payment', 'student_create', 'souvenir_distribution'
  * @param {string}  opts.description    - Human-readable description
  * @param {object}  [opts.meta]         - Optional JSONB metadata (receipt_number, student_id, etc.)
+ * @param {object}  [opts.client]       - Optional pg transaction client. When provided the
+ *                                        audit row is written through it, so it commits or
+ *                                        rolls back together with the surrounding transaction.
+ *                                        Old callers (no client) keep using the pool.
  */
-async function logTransaction({ admin_id, admin_role, transaction_type, description, meta }) {
+async function logTransaction({ admin_id, admin_role, transaction_type, description, meta, client }) {
+  const db = client || pool;
   try {
-    await pool.query(
+    await db.query(
       `INSERT INTO transaction_log (admin_id, admin_role, transaction_type, description, meta)
        VALUES ($1, $2, $3, $4, $5)`,
       [

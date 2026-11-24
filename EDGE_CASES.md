@@ -1,5 +1,10 @@
 # Edge Cases & Known Issues
 
+> **Note:** the annual promote/rollover feature ("Start New Academic Year") has
+> been removed — level is now captured per payment on free-flow receipts, so
+> student records are never advanced. Issues 3 and 4 below refer to that retired
+> feature and are kept for history only.
+
 ## Fixed Issues
 
 ### Issue 1: School Report Totals ✅
@@ -104,6 +109,21 @@ No changes needed - receipt delivery was already consistent.
 
 ---
 
+### Issue 7: Free-Flow Receipts Sent to the Wrong Address ✅
+**Status:** FIXED
+
+**Problem:** Free-flow payments never captured the payer's email. `POST /api/receipts` only resolved a recipient from the linked student row (always NULL for free-flow) and the class-rep route passed no recipient at all, so every receipt email silently fell back to `RECEIPT_EMAIL_TO` / `SMTP_USER` — the school's own mailbox instead of the student's inbox.
+
+**Solution:**
+- New `receipts.payer_email` column (snapshot beside `student_name` / `student_no` / `level`)
+- The Collect desk and class-rep page now require the payer's email: validated for format, stored on the receipt, and used as the recipient when the receipt email is sent as the payment is recorded
+- Fresher registration/admission receipts are unchanged — they keep using the email on the student row
+- Public endpoints never expose `payer_email` (the public records lookup uses explicit column lists; receipt routes are admin-only)
+
+**Result:** Every free-flow receipt is delivered to the payer's own address, and the success screen confirms where it was sent.
+
+---
+
 ## Summary Table
 
 | Issue | Status | Changes Required |
@@ -114,6 +134,7 @@ No changes needed - receipt delivery was already consistent.
 | 4. Rollover class retention | ✅ Fixed | None (already correct) |
 | 5. Receipt delivery | ✅ Fixed | None (already correct) |
 | 6. Payment reversal workflow | ✅ Fixed | Migration + new endpoint |
+| 7. Free-flow receipt email | ✅ Fixed | Migration + form/API updates |
 
 ## Database Migration Required
 
@@ -128,3 +149,4 @@ This will:
 - Make `student_souvenirs.receipt_id` NOT NULL
 - Add `voided_at`, `voided_by`, `void_reason` to `payments` table
 - Migrate existing NULL-receipt souvenirs to $0 souvenir-only receipts
+- Add `payer_email` to `receipts` (free-flow receipt recipient)

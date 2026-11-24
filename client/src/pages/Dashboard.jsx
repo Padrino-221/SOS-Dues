@@ -1,20 +1,40 @@
 import { useCallback, useEffect, useState } from 'react';
 import api from '../api/client';
+import { asArray } from '../utils/asArray';
 import { useAuth } from '../context/AuthContext';
 import { useRealtime } from '../realtime';
 import {
-  CurrencyCircleDollar,
-  Users,
-  TrendUp,
-  Warning,
-  Clock,
-  ShieldCheck,
-  Student,
-  Receipt,
-  ArrowUpRight,
-  UserPlus,
-  Buildings,
-} from '@phosphor-icons/react';
+  IconCurrencyDollar as CurrencyCircleDollar,
+  IconUsers as Users,
+  IconTrendingUp as TrendUp,
+  IconAlertTriangle as Warning,
+  IconClock as Clock,
+  IconShieldCheck as ShieldCheck,
+  IconBackpack as Student,
+  IconReceipt as Receipt,
+  IconArrowUpRight as ArrowUpRight,
+  IconUserPlus as UserPlus,
+  IconBuildings as Buildings,
+} from '@tabler/icons-react';
+
+// The institution runs on Africa/Accra (GMT+0, no DST). Formatting from that
+// zone keeps the displayed day identical on every device, instead of sliding
+// a day either way on non-GMT machines.
+const ACCRA_TZ = 'Africa/Accra';
+
+function formatShortDate(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { timeZone: ACCRA_TZ });
+}
+
+// Greeting follows the time of day instead of always saying "Good morning".
+function greetingFor() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
@@ -22,7 +42,9 @@ export default function Dashboard() {
   const [monthly, setMonthly] = useState([]);
   const [loadError, setLoadError] = useState('');
   const { user } = useAuth();
-  const isSchool = user?.role === 'school_admin';
+  const isSuper = user?.role === 'super_admin';
+  const isSchool = user?.role === 'school_admin' || isSuper;
+  const greeting = greetingFor();
 
   const loadAll = useCallback(() => {
     setLoadError('');
@@ -32,11 +54,16 @@ export default function Dashboard() {
       .catch(() => setLoadError('Dashboard data could not be loaded.'));
     api
       .get('/receipts', { params: { limit: 5 } })
-      .then((res) => setReceipts(res.data))
+      .then((res) => {
+        const data = res.data || {};
+        // Tolerate a plain array (older server) while preferring the
+        // { receipts, total, page, pageSize } contract.
+        setReceipts(Array.isArray(data) ? data : data.receipts || []);
+      })
       .catch(() => setLoadError('Some dashboard data could not be loaded.'));
     api
       .get('/reports/monthly')
-      .then((res) => setMonthly(res.data.monthly || []))
+      .then((res) => setMonthly(Array.isArray(res.data?.monthly) ? res.data.monthly : []))
       .catch(() => setLoadError('Some dashboard data could not be loaded.'));
   }, []);
 
@@ -44,10 +71,11 @@ export default function Dashboard() {
     loadAll();
   }, [loadAll]);
 
-  // Live updates: any payment, fresher movement or student change refreshes
-  // the figures in place (no page reload, no flash).
+  // Live updates: any payment (including a void), fresher movement or student
+  // change refreshes the figures in place (no page reload, no flash).
   useRealtime({
     'payment:new': loadAll,
+    'payment:voided': loadAll,
     'fresher:registered': loadAll,
     'fresher:verified': loadAll,
     'fresher:admitted': loadAll,
@@ -66,25 +94,27 @@ export default function Dashboard() {
       </div>
     );
 
-  const t = data.totals;
-  const myDept = !isSchool ? data.departments[0] : null;
+  const t = data.totals || {};
+  const depts = asArray(data.departments);
+  const myDept = !isSchool ? depts[0] : null;
   const pendingFreshers = isSchool
-    ? data.departments.reduce((s, d) => s + Number(d.pending_fresher_count || 0), 0)
+    ? depts.reduce((s, d) => s + Number(d.pending_fresher_count || 0), 0)
     : Number(myDept?.pending_fresher_count || 0);
-
-  const totalStudents = isSchool
-    ? data.departments.reduce((s, d) => s + Number(d.student_count || 0), 0)
-    : Number(myDept?.student_count || 0);
 
   const statCards = isSchool
     ? [
-        {
-          label: 'Dept Dues Collected',
-          value: `GHS ${Number(t.department_dues).toFixed(2)}`,
-          sub: `across ${data.departments.length} departments`,
-          icon: <CurrencyCircleDollar size={26} />,
-          cls: 'navy',
-        },
+        // The super admin oversees both sides — dept money is back on their cards.
+        ...(isSuper
+          ? [
+              {
+                label: 'Dept Dues Collected',
+                value: `GHS ${Number(t.department_dues).toFixed(2)}`,
+                sub: `across ${depts.length} departments`,
+                icon: <CurrencyCircleDollar size={26} />,
+                cls: 'navy',
+              },
+            ]
+          : []),
         {
           label: 'School Dues Collected',
           value: `GHS ${Number(t.school_dues).toFixed(2)}`,
@@ -92,6 +122,24 @@ export default function Dashboard() {
           icon: <CurrencyCircleDollar size={26} />,
           cls: 'gold',
         },
+        {
+          label: 'School Other Dues',
+          value: `GHS ${Number(t.school_other_dues || 0).toFixed(2)}`,
+          sub: 'school-wide extra items',
+          icon: <CurrencyCircleDollar size={26} />,
+          cls: 'violet',
+        },
+        ...(isSuper
+          ? [
+              {
+                label: 'Department Other Dues',
+                value: `GHS ${Number(t.dept_other_dues || 0).toFixed(2)}`,
+                sub: 'department extra items',
+                icon: <CurrencyCircleDollar size={26} />,
+                cls: 'violet',
+              },
+            ]
+          : []),
         {
           label: 'Pending Fresher Admissions',
           value: pendingFreshers,
@@ -101,6 +149,8 @@ export default function Dashboard() {
         },
       ]
     : [
+        // Department dashboard: only the department's own money — school dues
+        // and school-wide items stay on the Reports page, not on these cards.
         {
           label: 'Department Dues',
           value: `GHS ${Number(myDept?.department_dues_collected || 0).toFixed(2)}`,
@@ -109,11 +159,11 @@ export default function Dashboard() {
           cls: 'navy',
         },
         {
-          label: 'School Dues Via Dept',
-          value: `GHS ${Number(myDept?.school_dues_through_dept || 0).toFixed(2)}`,
-          sub: 'recorded with dues',
+          label: 'Department Other Dues',
+          value: `GHS ${Number(t.dept_other_dues || 0).toFixed(2)}`,
+          sub: 'your items from freshers',
           icon: <CurrencyCircleDollar size={26} />,
-          cls: 'gold',
+          cls: 'violet',
         },
         {
           label: 'Freshers Awaiting Admission',
@@ -140,7 +190,9 @@ export default function Dashboard() {
             <span className="dashboard-eyebrow-dot" />{' '}
             {isSchool ? 'School operations' : 'Department operations'}
           </div>
-          <h1>Good morning, {user?.name || (isSchool ? 'school admin' : 'there')}.</h1>
+          <h1>
+            {greeting}, {user?.name || (isSchool ? 'school admin' : 'there')}.
+          </h1>
           <p className="subtitle">
             {isSchool
               ? 'A quick read on collections, student movement, and departments that need attention.'
@@ -207,19 +259,19 @@ export default function Dashboard() {
           <div className="dashboard-panel-head">
             <div>
               <span className="dashboard-panel-kicker">Needs attention</span>
-              <h2>{isSchool ? 'Admission queue' : 'Your student pulse'}</h2>
+              <h2>{isSchool ? 'Admission queue' : 'Your collection pulse'}</h2>
             </div>
             <span className="dashboard-panel-icon amber">
               <Warning size={19} />
             </span>
           </div>
           {isSchool ? (
-            data.departments.filter((d) => Number(d.pending_fresher_count) > 0).length === 0 ? (
+            depts.filter((d) => Number(d.pending_fresher_count) > 0).length === 0 ? (
               <p className="muted text-sm">
                 All registered freshers have been admitted. Great job!
               </p>
             ) : (
-              data.departments
+              depts
                 .filter((d) => Number(d.pending_fresher_count) > 0)
                 .map((d) => (
                   <div key={d.id} className="dashboard-queue-row">
@@ -241,10 +293,10 @@ export default function Dashboard() {
                   <Users size={23} />
                 </div>
                 <div>
-                  <strong>{myDept?.student_count || 0} students</strong>
+                  <strong>{myDept?.payers || 0} distinct payer(s)</strong>
                   <span>
-                    {myDept?.fresher_count || 0} freshers · {myDept?.admitted_fresher_count || 0}{' '}
-                    admitted
+                    {myDept?.receipt_count || 0} receipts · {myDept?.fresher_count || 0} freshers ·{' '}
+                    {myDept?.admitted_fresher_count || 0} admitted
                   </span>
                 </div>
               </div>
@@ -279,7 +331,7 @@ export default function Dashboard() {
                   <strong>{r.student_name}</strong>
                   <small>
                     {r.receipt_number} · {r.method === 'momo' ? 'Mobile Money' : r.method} ·{' '}
-                    {new Date(r.paid_at).toLocaleDateString()}
+                    {formatShortDate(r.paid_at)}
                   </small>
                 </span>
                 <b>GHS {Number(r.total_amount).toFixed(2)}</b>
@@ -325,11 +377,14 @@ function RhythmChart({ monthly }) {
   }
 
   const months = monthly.slice(-6);
-  const totals = months.map((m) => Number(m.dept_dues || 0) + Number(m.school_dues || 0));
+  const totals = months.map(
+    (m) => Number(m.dept_dues || 0) + Number(m.school_dues || 0) + Number(m.other_dues || 0)
+  );
   const deptVals = months.map((m) => Number(m.dept_dues || 0));
   const schoolVals = months.map((m) => Number(m.school_dues || 0));
+  const otherVals = months.map((m) => Number(m.other_dues || 0));
 
-  const maxVal = Math.max(...deptVals, ...schoolVals, ...totals, 100);
+  const maxVal = Math.max(...deptVals, ...schoolVals, ...otherVals, ...totals, 100);
   const roundedMax = Math.ceil(maxVal / 400) * 400 || 1000;
   const total6 = totals.reduce((a, b) => a + b, 0);
   const avg = total6 / Math.max(months.length, 1);
@@ -356,8 +411,9 @@ function RhythmChart({ monthly }) {
   const hoveredTotal = hoveredIdx !== null ? totals[hoveredIdx] : null;
   const hoveredDept = hoveredIdx !== null ? deptVals[hoveredIdx] : null;
   const hoveredSchool = hoveredIdx !== null ? schoolVals[hoveredIdx] : null;
+  const hoveredOther = hoveredIdx !== null ? otherVals[hoveredIdx] : null;
 
-  // Points & coordinates for Department Dues and School Dues
+  // Points & coordinates for Department, School and Other Dues series
   const ptsDept = months.map((m, i) => ({
     x: n === 1 ? padL + chartW / 2 : padL + (i / (n - 1)) * chartW,
     y: yFor(deptVals[i]),
@@ -374,8 +430,17 @@ function RhythmChart({ monthly }) {
     i,
   }));
 
+  const ptsOther = months.map((m, i) => ({
+    x: n === 1 ? padL + chartW / 2 : padL + (i / (n - 1)) * chartW,
+    y: yFor(otherVals[i]),
+    val: otherVals[i],
+    m,
+    i,
+  }));
+
   const lineDeptD = n > 1 ? ptsDept.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') : '';
   const lineSchoolD = n > 1 ? ptsSchool.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') : '';
+  const lineOtherD = n > 1 ? ptsOther.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') : '';
 
   const areaDeptD =
     n > 1
@@ -384,6 +449,10 @@ function RhythmChart({ monthly }) {
   const areaSchoolD =
     n > 1
       ? lineSchoolD + ` L ${ptsSchool[n - 1].x} ${padT + chartH} L ${ptsSchool[0].x} ${padT + chartH} Z`
+      : '';
+  const areaOtherD =
+    n > 1
+      ? lineOtherD + ` L ${ptsOther[n - 1].x} ${padT + chartH} L ${ptsOther[0].x} ${padT + chartH} Z`
       : '';
 
   return (
@@ -428,6 +497,10 @@ function RhythmChart({ monthly }) {
               <stop offset="0%" stopColor="#b5852b" stopOpacity="0.2" />
               <stop offset="100%" stopColor="#b5852b" stopOpacity="0.01" />
             </linearGradient>
+            <linearGradient id="otherFillGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#6d3fc0" stopOpacity="0.16" />
+              <stop offset="100%" stopColor="#6d3fc0" stopOpacity="0.01" />
+            </linearGradient>
           </defs>
 
           {/* Horizontal Grid Lines & Y Axis */}
@@ -464,7 +537,7 @@ function RhythmChart({ monthly }) {
               x1={p.x}
               y1={padT + chartH}
               x2={p.x}
-              y2={Math.min(ptsDept[p.i].y, ptsSchool[p.i].y)}
+              y2={Math.min(ptsDept[p.i].y, ptsSchool[p.i].y, ptsOther[p.i].y)}
               stroke="#d6d0c1"
               strokeWidth="1"
               strokeDasharray="3 3"
@@ -474,6 +547,7 @@ function RhythmChart({ monthly }) {
           {/* Area Fills */}
           {n > 1 && <path d={areaDeptD} fill="url(#deptFillGrad)" />}
           {n > 1 && <path d={areaSchoolD} fill="url(#schoolFillGrad)" />}
+          {n > 1 && <path d={areaOtherD} fill="url(#otherFillGrad)" />}
 
           {/* Department Dues Polyline (Navy #1d2a5e) */}
           {n > 1 && (
@@ -499,10 +573,23 @@ function RhythmChart({ monthly }) {
             />
           )}
 
+          {/* Other Dues Polyline (Violet #6d3fc0) */}
+          {n > 1 && (
+            <path
+              d={lineOtherD}
+              fill="none"
+              stroke="#6d3fc0"
+              strokeWidth="2.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
           {/* Interactive Hover Hit Regions & Node Dots */}
           {months.map((m, i) => {
             const pDept = ptsDept[i];
             const pSchool = ptsSchool[i];
+            const pOther = ptsOther[i];
             const isHovered = hoveredIdx === i;
 
             return (
@@ -526,6 +613,7 @@ function RhythmChart({ monthly }) {
                   <>
                     <circle cx={pDept.x} cy={pDept.y} r="11" fill="#1d2a5e" opacity="0.14" />
                     <circle cx={pSchool.x} cy={pSchool.y} r="11" fill="#b5852b" opacity="0.14" />
+                    <circle cx={pOther.x} cy={pOther.y} r="11" fill="#6d3fc0" opacity="0.14" />
                   </>
                 )}
 
@@ -551,9 +639,20 @@ function RhythmChart({ monthly }) {
                 />
                 <circle cx={pSchool.x} cy={pSchool.y} r="2.5" fill="#ffffff" />
 
+                {/* Other Dues Ring Node (Violet) */}
+                <circle
+                  cx={pOther.x}
+                  cy={pOther.y}
+                  r={isHovered ? 7.5 : 6}
+                  fill="#6d3fc0"
+                  stroke="#ffffff"
+                  strokeWidth="2.2"
+                />
+                <circle cx={pOther.x} cy={pOther.y} r="2.5" fill="#ffffff" />
+
                 {/* Single Month overhead total pill */}
                 {n === 1 && (
-                  <g transform={`translate(${pDept.x}, ${Math.min(pDept.y, pSchool.y) - 14})`}>
+                  <g transform={`translate(${pDept.x}, ${Math.min(pDept.y, pSchool.y, pOther.y) - 14})`}>
                     <rect
                       x="-65"
                       y="-11"
@@ -605,6 +704,11 @@ function RhythmChart({ monthly }) {
               <span>School Dues:</span>
               <strong>GHS {hoveredSchool.toFixed(2)}</strong>
             </div>
+            <div className="rhythm-tooltip-row">
+              <span className="dot other"></span>
+              <span>Other Dues:</span>
+              <strong>GHS {hoveredOther.toFixed(2)}</strong>
+            </div>
             <div className="rhythm-tooltip-row total">
               <span>Total Collection:</span>
               <strong>GHS {hoveredTotal.toFixed(2)}</strong>
@@ -620,6 +724,9 @@ function RhythmChart({ monthly }) {
         </span>
         <span>
           <i className="dot school" /> School dues
+        </span>
+        <span>
+          <i className="dot other" /> Other dues
         </span>
         <span className="rhythm-legend-total">
           All amounts in GHS — Separate Dept & School trends

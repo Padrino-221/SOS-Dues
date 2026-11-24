@@ -1,0 +1,7 @@
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E9EEF9','primaryTextColor':'#111111','primaryBorderColor':'#0D2063','lineColor':'#33415C','secondaryColor':'#FFF4D6','tertiaryColor':'#F7F9FC','fontFamily':'Times New Roman','fontSize':'16px','edgeLabelBackground':'#FFFFFF'}}}%%
+flowchart LR
+  S["Open collection form"] --> D["Capture payer and select dues lines"]
+  D --> M["Choose cash or momo and review total"]
+  M --> C{"Confirm collection"}
+  C -- "No, edit" --> D
+  C -- "Yes" --> TX["Receipt issued and event emitted"]

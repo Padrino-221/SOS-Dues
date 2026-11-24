@@ -10,10 +10,23 @@ function notFound(req, res, next) {
 }
 
 function errorHandler(err, req, res, next) {
-  const statusCode = err.statusCode || 500;
+  // A CSV/report stream can fail after the response has already started.
+  // Trying to send a second response here throws ERR_HTTP_HEADERS_SENT and,
+  // under PM2, turns one broken export into a crash loop — hand it back to
+  // Express, which tears the connection down instead.
+  if (res.headersSent) return next(err);
+
+  const statusCode = err.statusCode || err.status || 500;
   if (process.env.NODE_ENV !== 'test') {
     console.error(err);
   }
+
+  // JSON body parsing failures quote the offending input and byte offset —
+  // answer with a fixed message instead of echoing the parser back.
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid request body.' });
+  }
+
   // Never leak internal error details; for expected errors (with a statusCode
   // and message from AppError) pass the message through.
   const isAppError = !!err.statusCode;

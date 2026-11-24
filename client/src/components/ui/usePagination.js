@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { asArray } from '../../utils/asArray';
 
 /**
  * Client-side pagination hook.
@@ -7,13 +8,14 @@ import { useState, useMemo } from 'react';
  */
 export default function usePagination(items = [], perPage = 10) {
   const [page, setPage] = useState(1);
-  const total = Array.isArray(items) ? items.length : 0;
+  const list = asArray(items);
+  const total = list.length;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const safePage = Math.min(page, totalPages);
 
   const slice = useMemo(
-    () => items.slice((safePage - 1) * perPage, safePage * perPage),
-    [items, safePage, perPage]
+    () => list.slice((safePage - 1) * perPage, safePage * perPage),
+    [list, safePage, perPage]
   );
 
   return { page: safePage, setPage, slice, totalPages, totalItems: total, perPage };

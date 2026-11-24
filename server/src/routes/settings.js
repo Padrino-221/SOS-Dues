@@ -4,6 +4,7 @@ const { AppError } = require('../utils/errors');
 const { requireAuth, requireSchoolAdmin } = require('../middleware/auth');
 const { logTransaction } = require('../utils/audit');
 const { normalizeAcademicYear } = require('../utils/academicYear');
+const { assertMainDues } = require('../utils/duesLimits');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -20,34 +21,23 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// ─── Update the access code freshers need to fill the public form (School Admin) ───
-router.put('/fresher_access_code', requireSchoolAdmin, async (req, res, next) => {
-  try {
-    const code = String(req.body.value || '').trim();
-    if (code.length < 4) throw new AppError('Access code must be at least 4 characters', 400);
-    await pool.query(
-      `INSERT INTO settings (key, value) VALUES ('fresher_access_code', $1)
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-      [code]
-    );
-    await logTransaction({
-      admin_id: req.user.id,
-      admin_role: 'SCHOOL_ADMIN',
-      transaction_type: 'settings_update',
-      description: 'Updated the fresher pre-registration access code',
-      meta: { fresher_access_code: code },
-    });
-    res.json({ fresher_access_code: code });
-  } catch (err) {
-    next(err);
-  }
-});
-
 // ─── Update the school-wide School Dues amount (School Admin only) ───
 router.put('/school_dues_amount', requireSchoolAdmin, async (req, res, next) => {
   try {
-    const amount = Number(req.body.value);
-    if (isNaN(amount) || amount < 0) throw new AppError('A valid amount is required', 400);
+    const raw = req.body.value;
+    // Reject missing/empty input explicitly: Number('') === 0 would silently
+    // store GHS 0 when the field is simply cleared.
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      throw new AppError('Enter an amount', 400);
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new AppError('A valid amount is required', 400);
+    }
+    // Money is stored to 2 decimal places — quantize instead of letting
+    // float noise (e.g. 12.345000000000001) reach the database.
+    const amount = Math.round(parsed * 100) / 100;
+    assertMainDues(amount, 'School dues');
     await pool.query(
       `INSERT INTO settings (key, value) VALUES ('school_dues_amount', $1)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
@@ -74,12 +64,6 @@ router.put('/active_academic_year', requireSchoolAdmin, async (req, res, next) =
       `INSERT INTO settings (key, value) VALUES ('active_academic_year', $1)
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
       [academicYear]
-    );
-    // Changing the active year (re)enables the rollover for a fresh transition,
-    // so a new end-of-year rollover won't be blocked by the previous one.
-    await pool.query(
-      `INSERT INTO settings (key, value) VALUES ('last_rollover_to', '')
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
     );
     await logTransaction({
       admin_id: req.user.id,

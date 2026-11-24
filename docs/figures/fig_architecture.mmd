@@ -1,0 +1,16 @@
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#E9EEF9','primaryTextColor':'#111111','primaryBorderColor':'#0D2063','lineColor':'#33415C','secondaryColor':'#FFF4D6','tertiaryColor':'#F7F9FC','fontFamily':'Times New Roman','fontSize':'16px','edgeLabelBackground':'#FFFFFF'}}}%%
+flowchart TB
+  L["Landing page"] --> SPA["React 19 SPA<br/>Vite static build"]
+  A["Fresher pre-registration<br/>/apply"] --> SPA
+  R["Receipt lookup<br/>/records"] --> SPA
+  REP["Class rep collection<br/>/rep/:code"] --> SPA
+  LOG["Staff sign-in /login"] --> SPA
+  PAN["Admin workspace<br/>freshers, receipts, reports"] --> SPA
+  SPA -->|"REST /api"| NGX["Nginx TLS<br/>dues.sosuenr.com"]
+  NGX --> API["Express 5 API<br/>PM2 dues-api :3001"]
+  API --> AUTH["JWT guards<br/>role and department scope"]
+  API --> PDF["PDFKit<br/>receipt documents"]
+  API --> MAIL["SMTP<br/>receipt email"]
+  API --> RT["Socket.IO<br/>school and department rooms"]
+  API --> DB[("PostgreSQL<br/>dues")]
+  RT --> SPA
