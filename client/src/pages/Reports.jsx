@@ -562,7 +562,9 @@ export default function Reports() {
           <span className="muted text-sm">{periodLabel(from, to)}</span>
         </div>
         <div className="rc-stats">
-          {showDeptStats && (
+          {/* Continuing-student view: the school only cares about School Dues —
+              dept dues, other-dues buckets and the grand total are hidden. */}
+          {showDeptStats && !continuingOnly && (
             <div className="rc-stat-card rc-stat-card--navy">
               <div className="rc-stat-icon">
                 <ChartBar size={20} />
@@ -587,16 +589,18 @@ export default function Reports() {
               </div>
             </div>
           </div>
-          <div className="rc-stat-card rc-stat-card--violet">
-            <div className="rc-stat-icon">
-              <Coins size={20} />
+          {!continuingOnly && (
+            <div className="rc-stat-card rc-stat-card--violet">
+              <div className="rc-stat-icon">
+                <Coins size={20} />
+              </div>
+              <div className="rc-stat-body">
+                <div className="rc-stat-value">GHS {Number(t.school_other_dues || 0).toFixed(2)}</div>
+                <div className="rc-stat-label">School Other Dues</div>
+              </div>
             </div>
-            <div className="rc-stat-body">
-              <div className="rc-stat-value">GHS {Number(t.school_other_dues || 0).toFixed(2)}</div>
-              <div className="rc-stat-label">School Other Dues</div>
-            </div>
-          </div>
-          {showDeptStats && (
+          )}
+          {showDeptStats && !continuingOnly && (
             <div className="rc-stat-card rc-stat-card--violet">
               <div className="rc-stat-icon">
                 <Coins size={20} />
@@ -607,19 +611,22 @@ export default function Reports() {
               </div>
             </div>
           )}
-          <div className="rc-stat-card rc-stat-card--green">
-            <div className="rc-stat-icon">
-              <TrendUp size={20} />
+          {!continuingOnly && (
+            <div className="rc-stat-card rc-stat-card--green">
+              <div className="rc-stat-icon">
+                <TrendUp size={20} />
+              </div>
+              <div className="rc-stat-body">
+                <div className="rc-stat-value">GHS {totalCollected.toFixed(2)}</div>
+                <div className="rc-stat-label">Total Collected</div>
+              </div>
             </div>
-            <div className="rc-stat-body">
-              <div className="rc-stat-value">GHS {totalCollected.toFixed(2)}</div>
-              <div className="rc-stat-label">Total Collected</div>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* ─── Other Dues by Item: school-wide vs department charges ─── */}
+      {!continuingOnly && (
       <div className="card" style={{ marginBottom: 24 }}>
         <div className="card-header">
           <h3>
@@ -698,6 +705,7 @@ export default function Reports() {
           </div>
         )}
       </div>
+      )}
 
       {/* ─── Payment Channels: cash vs mobile money for the current filters ─── */}
       <div className="card" style={{ marginBottom: 24 }}>
